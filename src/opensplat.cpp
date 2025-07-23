@@ -50,7 +50,7 @@ int main(int argc, char *argv[]) {
 
     model.loadPly(PLYFile);
 
-    cam InputCam;
+    Cam InputCam;
 
     const float scaleFactor = downScaleFactor;
     const float fx = InputCam.fx / scaleFactor;
@@ -94,22 +94,23 @@ int main(int argc, char *argv[]) {
     torch::Tensor camDepths; // CPU-only
     torch::Tensor rgb;
 
-    auto p = ProjectGaussiansCPU::apply(
-        means, torch::exp(scales), 1, quats / quats.norm(2, {-1}, true),
-        viewMat, torch::matmul(projMat, viewMat), fx, fy, cx, cy, height,
-        width);
-    xys = p[0];
-    radii = p[1];
-    conics = p[2];
-    cov2d = p[3];
-    camDepths = p[4];
+    int numPoints = means.size(0);
+
+    auto t = project_gaussians_forward_tensor_cpu(
+        numPoints, means, scales, globScale, quats, viewMat, projMat, fx, fy,
+        cx, cy, imgHeight, imgWidth, clipThresh);
+    xys = t[0];
+    radii = t[1];
+    conics = t[2];
+    cov2d = t[3];
+    camDepths = t[4];
 
     if (radii.sum().item<float>() == 0.0f)
       return backgroundColor.repeat({height, width, 1});
 
     torch::Tensor viewDirs = means.detach() - T.transpose(0, 1).to(device);
     viewDirs = viewDirs / viewDirs.norm(2, {-1}, true);
-    int degreesToUse = (std::min<int>)(step / shDegreeInterval, shDegree);
+    int degreesToUse = shDegree;
     torch::Tensor rgbs;
 
     // std::cout<<viewDirs<<std::endl;
@@ -118,9 +119,11 @@ int main(int argc, char *argv[]) {
 
     rgbs = torch::clamp_min(rgbs + 0.5f, 0.0f);
 
-    rgb = RasterizeGaussiansCPU::apply(
-        xys, radii, conics, rgbs, torch::sigmoid(opacities), cov2d, camDepths,
-        height, width, backgroundColor);
+    auto t =
+        rasterize_forward_tensor_cpu(imgWidth, imgHeight, xys, conics, colors,
+                                     opacity, background, cov2d, camDepths);
+    // Final image
+    rgb = std::get<0>(t);
 
     rgb = torch::clamp_max(rgb, 1.0f);
     cv::Mat image = tensorToImage(rgb.detach().cpu());
