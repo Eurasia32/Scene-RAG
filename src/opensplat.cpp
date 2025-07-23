@@ -2,10 +2,8 @@
 #include "cam.hpp"
 #include "constants.hpp"
 #include "cv_utils.hpp"
-#include "input_data.hpp"
 #include "model.hpp"
 #include "point_io.hpp"
-#include "tensor_math.hpp"
 #include <cxxopts.hpp>
 #include <filesystem>
 #include <gsplat-cpu/bindings.h>

@@ -54,7 +54,6 @@ set(OPENSPLAT_RENDER_SRC_FILES
     src/point_io.cpp
     src/model.cpp
     src/cv_utils.cpp
-    src/tensor_math.cpp
 )
 
 # 创建可执行文件

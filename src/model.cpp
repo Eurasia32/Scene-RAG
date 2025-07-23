@@ -1,6 +1,5 @@
 #include "model.hpp"
 #include "constants.hpp"
-#include "tensor_math.hpp"
 #include <filesystem>
 
 namespace fs = std::filesystem;

@@ -1,7 +1,6 @@
 #ifndef MODEL_H
 #define MODEL_H
 
-#include "input_data.hpp"
 #include <filesystem>
 #include <fstream>
 #include <gsplat-cpu/bindings.h>
