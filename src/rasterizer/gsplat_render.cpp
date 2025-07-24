@@ -197,7 +197,7 @@ project_gaussians_forward_tensor_cpu(
 }
 
 // 2D光栅化 - Alpha混合
-std::tuple<torch::Tensor, torch::Tensor, std::vector<int32_t> *>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, std::vector<int32_t> *>
 rasterize_forward_tensor_cpu(
     const int width, const int height, const torch::Tensor &xys,
     const torch::Tensor &conics, const torch::Tensor &colors,
@@ -223,6 +223,9 @@ rasterize_forward_tensor_cpu(
   torch::Tensor outImg = torch::zeros(
       {height, width, channels},
       torch::TensorOptions().dtype(torch::kFloat32).device(device));
+  torch::Tensor outDepth = torch::zeros(
+      {height, width},
+      torch::TensorOptions().dtype(torch::kFloat32).device(device));
   torch::Tensor finalTs =
       torch::ones({height, width},
                   torch::TensorOptions().dtype(torch::kFloat32).device(device));
@@ -240,7 +243,9 @@ rasterize_forward_tensor_cpu(
   float *pSqCov2dX = static_cast<float *>(sqCov2dX.data_ptr());
   float *pSqCov2dY = static_cast<float *>(sqCov2dY.data_ptr());
   float *pOpacities = static_cast<float *>(opacities.data_ptr());
+  
   float *pOutImg = static_cast<float *>(outImg.data_ptr());
+  float *pOutDepth = static_cast<float *>(outDepth.data_ptr());
   float *pFinalTs = static_cast<float *>(finalTs.data_ptr());
   bool *pDone = static_cast<bool *>(done.data_ptr());
   float *pColors = static_cast<float *>(colors.data_ptr());
@@ -261,6 +266,7 @@ rasterize_forward_tensor_cpu(
 
     float gX = pCenters[gaussianId * 2 + 0];
     float gY = pCenters[gaussianId * 2 + 1];
+    float gDepth = pDepths[gaussianId]; // 获取该高斯的深度值
 
     float sqx = pSqCov2dX[gaussianId];
     float sqy = pSqCov2dY[gaussianId];
@@ -299,10 +305,13 @@ rasterize_forward_tensor_cpu(
 
         float vis = alpha * T;
 
-        // Alpha混合
+        // Alpha混合RGB和深度
         pOutImg[pixIdx * 3 + 0] += vis * pColors[gaussianId * 3 + 0];
         pOutImg[pixIdx * 3 + 1] += vis * pColors[gaussianId * 3 + 1];
         pOutImg[pixIdx * 3 + 2] += vis * pColors[gaussianId * 3 + 2];
+        
+        // Alpha混合深度
+        pOutDepth[pixIdx] += vis * gDepth;
 
         pFinalTs[pixIdx] = nextT;
         px2gid[pixIdx].push_back(gaussianId);
@@ -310,21 +319,26 @@ rasterize_forward_tensor_cpu(
     }
   }
 
-  // 添加背景色
+  // 添加背景色和背景深度
+  const float bgDepth = 1000.0f; // 背景深度设为远平面
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
       size_t pixIdx = (i * width + j);
       float T = pFinalTs[pixIdx];
 
+      // 背景RGB
       pOutImg[pixIdx * 3 + 0] += T * bgR;
       pOutImg[pixIdx * 3 + 1] += T * bgG;
       pOutImg[pixIdx * 3 + 2] += T * bgB;
+      
+      // 背景深度
+      pOutDepth[pixIdx] += T * bgDepth;
 
       std::reverse(px2gid[pixIdx].begin(), px2gid[pixIdx].end());
     }
   }
 
-  return std::make_tuple(outImg, finalTs, px2gid);
+  return std::make_tuple(outImg, outDepth, finalTs, px2gid);
 }
 
 // 球谐函数常数

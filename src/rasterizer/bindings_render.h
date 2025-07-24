@@ -20,8 +20,8 @@ project_gaussians_forward_tensor_cpu(
     const float cy, const unsigned img_height, const unsigned img_width,
     const float clip_thresh);
 
-// 2D光栅化 - Alpha混合
-std::tuple<torch::Tensor, torch::Tensor, std::vector<int32_t> *>
+// 2D光栅化 - Alpha混合，同时输出RGB和深度图
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, std::vector<int32_t> *>
 rasterize_forward_tensor_cpu(
     const int width, const int height, const torch::Tensor &xys,
     const torch::Tensor &conics, const torch::Tensor &colors,

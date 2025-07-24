@@ -59,10 +59,13 @@ int main(int argc, char *argv[]) {
       "i,input", "输入PLY文件路径", cxxopts::value<std::string>())(
       "o,output", "输出图像路径",
       cxxopts::value<std::string>()->default_value("output.png"))(
+      "depth-output", "输出深度图路径（可选）", cxxopts::value<std::string>())(
+      "depth-min", "深度图最小值", cxxopts::value<float>()->default_value("0.1"))(
+      "depth-max", "深度图最大值", cxxopts::value<float>()->default_value("100.0"))(
       "d,downscale", "降采样倍数",
       cxxopts::value<float>()->default_value("1.0"))(
       "s,sh-degree", "球谐函数阶数", cxxopts::value<int>()->default_value("3"))(
-      "m,view-matrix", "16个元素的视图变换矩阵(行主序)，用空格或逗号分隔",
+      "m,view-matrix", "16个元素的视图变换矩阱(行主序)，用空格或逗号分隔",
       cxxopts::value<std::string>())(
       "width", "图像宽度", cxxopts::value<int>()->default_value("800"))(
       "height", "图像高度", cxxopts::value<int>()->default_value("600"))(
@@ -87,6 +90,9 @@ int main(int argc, char *argv[]) {
   // 2. 获取参数
   const std::string ply_path = result["input"].as<std::string>();
   const std::string output_path = result["output"].as<std::string>();
+  const std::string depth_output_path = result.count("depth-output") ? result["depth-output"].as<std::string>() : "";
+  const float depth_min = result["depth-min"].as<float>();
+  const float depth_max = result["depth-max"].as<float>();
   const float downscale_factor = result["downscale"].as<float>();
   const int sh_degree = result["sh-degree"].as<int>();
   const int width = result["width"].as<int>();
@@ -178,11 +184,11 @@ int main(int argc, char *argv[]) {
     rgbs = torch::clamp_min(rgbs + 0.5f, 0.0f);
 
     // 光栅化
-    torch::Tensor rgb, final_Ts;
+    torch::Tensor rgb, depth, final_Ts;
     std::vector<int32_t> *px2gid;
     torch::Tensor opacities_sigmoid = torch::sigmoid(model.opacities);
 
-    std::tie(rgb, final_Ts, px2gid) = rasterize_forward_tensor_cpu(
+    std::tie(rgb, depth, final_Ts, px2gid) = rasterize_forward_tensor_cpu(
         render_width, render_height, xys, conics, rgbs, opacities_sigmoid,
         model.backgroundColor, cov2d, camDepths);
 
@@ -194,7 +200,24 @@ int main(int argc, char *argv[]) {
     cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
     cv::imwrite(output_path, image);
 
-    std::cout << "渲染完成，图像已保存至: " << output_path << std::endl;
+    std::cout << "渲染完成，RGB图像已保存至: " << output_path << std::endl;
+    
+    // 保存深度图（如果指定了输出路径）
+    if (!depth_output_path.empty()) {
+      saveDepthImage(depth.detach().cpu(), depth_output_path, depth_min, depth_max);
+      std::cout << "深度图已保存至: " << depth_output_path << std::endl;
+      
+      // 同时保存原始深度值
+      std::string raw_depth_path = depth_output_path;
+      size_t dotPos = raw_depth_path.find_last_of('.');
+      if (dotPos != std::string::npos) {
+        raw_depth_path = raw_depth_path.substr(0, dotPos) + "_raw.tiff";
+      } else {
+        raw_depth_path += "_raw.tiff";
+      }
+      std::cout << "原始深度数据已保存至: " << raw_depth_path << std::endl;
+    }
+    
     std::cout << "渲染尺寸: " << render_width << "x" << render_height
               << std::endl;
 
