@@ -48,15 +48,14 @@ set(GSPLAT_LIBS gsplat_cpu)
 add_library(gsplat_cpu src/rasterizer/gsplat-cpu/gsplat_cpu.cpp)
 target_include_directories(gsplat_cpu PRIVATE ${TORCH_INCLUDE_DIRS})
 
-# 定义可执行文件的源文件
+# 定义渲染器可执行文件的源文件
 set(OPENSPLAT_RENDER_SRC_FILES
-    src/opensplat.cpp
-    src/point_io.cpp
-    src/model.cpp
-    src/cv_utils.cpp
+    src/opensplat_render.cpp
+    src/model_render.cpp
+    src/cv_utils_render.cpp
 )
 
-# 创建可执行文件
+# 创建渲染器可执行文件
 add_executable(opensplat_render ${OPENSPLAT_RENDER_SRC_FILES})
 
 # 安装目标
@@ -75,3 +74,23 @@ target_link_libraries(opensplat_render PRIVATE
     nanoflann::nanoflann
 )
 target_link_libraries(opensplat_render PUBLIC pthread)
+
+# 如果需要保留原始的opensplat可执行文件，取消注释以下部分：
+# set(OPENSPLAT_ORIGINAL_SRC_FILES
+#     src/opensplat.cpp
+#     src/point_io.cpp
+#     src/model.cpp
+#     src/cv_utils.cpp
+# )
+# add_executable(opensplat ${OPENSPLAT_ORIGINAL_SRC_FILES})
+# target_include_directories(opensplat PRIVATE
+#     ${PROJECT_SOURCE_DIR}/include
+#     ${PROJECT_SOURCE_DIR}/src/rasterizer
+# )
+# target_link_libraries(opensplat PUBLIC ${STDPPFS_LIBRARY} ${GSPLAT_LIBS} ${TORCH_LIBRARIES} ${OpenCV_LIBS})
+# target_link_libraries(opensplat PRIVATE
+#     nlohmann_json::nlohmann_json
+#     cxxopts::cxxopts
+#     nanoflann::nanoflann
+# )
+# target_link_libraries(opensplat PUBLIC pthread)
