@@ -2,11 +2,13 @@
 #include "cv_utils_render.hpp"
 #include "model_render.hpp"
 #include "rasterizer/bindings_render.h"
+#include "scene_rag.hpp"
 #include <cxxopts.hpp>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <vector>
+#include <memory>
 
 namespace fs = std::filesystem;
 using namespace torch::indexing;
@@ -59,6 +61,10 @@ int main(int argc, char *argv[]) {
       "i,input", "输入PLY文件路径", cxxopts::value<std::string>())(
       "o,output", "输出图像路径",
       cxxopts::value<std::string>()->default_value("output.png"))(
+      "enable-rag", "启用Scene-RAG功能", cxxopts::value<bool>()->default_value("false"))(
+      "rag-output", "Scene-RAG输出基础路径", cxxopts::value<std::string>()->default_value("scene_rag"))(
+      "rag-query", "执行RAG查询（文本）", cxxopts::value<std::string>())(
+      "export-scene-graph", "导出场景图到JSON文件", cxxopts::value<std::string>())(
       "d,downscale", "降采样倍数",
       cxxopts::value<float>()->default_value("1.0"))(
       "s,sh-degree", "球谐函数阶数", cxxopts::value<int>()->default_value("3"))(
@@ -87,6 +93,10 @@ int main(int argc, char *argv[]) {
   // 2. 获取参数
   const std::string ply_path = result["input"].as<std::string>();
   const std::string output_path = result["output"].as<std::string>();
+  const bool enable_rag = result["enable-rag"].as<bool>();
+  const std::string rag_output_path = result["rag-output"].as<std::string>();
+  const std::string rag_query = result.count("rag-query") ? result["rag-query"].as<std::string>() : "";
+  const std::string scene_graph_path = result.count("export-scene-graph") ? result["export-scene-graph"].as<std::string>() : "";
   const float downscale_factor = result["downscale"].as<float>();
   const int sh_degree = result["sh-degree"].as<int>();
   const int width = result["width"].as<int>();
@@ -96,6 +106,13 @@ int main(int argc, char *argv[]) {
   const auto view_matrix_str = result["view-matrix"].as<std::string>();
 
   try {
+    // 初始化Scene-RAG系统
+    std::unique_ptr<SceneRAG> scene_rag;
+    if (enable_rag) {
+      std::cout << "启用Scene-RAG功能..." << std::endl;
+      scene_rag = std::make_unique<SceneRAG>();
+    }
+
     // 3. 设置计算设备
     torch::Device device = torch::kCPU;
     if (torch::cuda::is_available()) {
@@ -185,6 +202,52 @@ int main(int argc, char *argv[]) {
     std::tie(rgb, final_Ts, px2gid) = rasterize_forward_tensor_cpu(
         render_width, render_height, xys, conics, rgbs, opacities_sigmoid,
         model.backgroundColor, cov2d, camDepths);
+
+    // Scene-RAG处理（在删除px2gid之前）
+    if (enable_rag && px2gid) {
+      std::cout << "开始Scene-RAG处理..." << std::endl;
+      
+      // 转换RGB图像为OpenCV格式
+      torch::Tensor rgb_for_rag = torch::clamp_max(rgb, 1.0f);
+      cv::Mat rag_image = tensorToImage(rgb_for_rag.detach().cpu());
+      cv::cvtColor(rag_image, rag_image, cv::COLOR_RGB2BGR);
+      
+      // 执行Scene-RAG处理
+      scene_rag->processRenderResult(rag_image, px2gid, model, render_width, render_height);
+      
+      // 保存Scene-RAG数据
+      scene_rag->save(rag_output_path);
+      
+      // 执行查询（如果指定）
+      if (!rag_query.empty()) {
+        std::cout << "执行RAG查询: \"" << rag_query << "\"" << std::endl;
+        auto query_results = scene_rag->queryByText(rag_query, 5);
+        
+        std::cout << "查询结果:" << std::endl;
+        for (size_t i = 0; i < query_results.size(); i++) {
+          const auto& result = query_results[i];
+          std::cout << "  [" << i+1 << "] 分割ID: " << result.segment_id 
+                    << ", 置信度: " << result.confidence
+                    << ", 高斯点数: " << result.gaussian_ids.size() << std::endl;
+          
+          // 保存查询结果掩码
+          std::string result_mask_path = rag_output_path + "_query_result_" + std::to_string(i+1) + ".png";
+          cv::imwrite(result_mask_path, result.mask);
+        }
+      }
+      
+      // 导出场景图（如果指定）
+      if (!scene_graph_path.empty()) {
+        scene_rag->exportSceneGraph(scene_graph_path);
+      }
+      
+      // 输出统计信息
+      auto stats = scene_rag->getStatistics();
+      std::cout << "Scene-RAG统计:" << std::endl;
+      std::cout << "  分割区域数: " << stats.total_segments << std::endl;
+      std::cout << "  映射高斯点数: " << stats.total_gaussians_mapped << std::endl;
+      std::cout << "  向量数据库大小: " << stats.database_size << std::endl;
+    }
 
     delete[] px2gid;
 

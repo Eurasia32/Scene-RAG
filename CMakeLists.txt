@@ -53,6 +53,8 @@ set(OPENSPLAT_RENDER_SRC_FILES
     src/opensplat_render.cpp
     src/model_render.cpp
     src/cv_utils_render.cpp
+    src/scene_rag.cpp
+    src/scene_rag_core.cpp
 )
 
 # 创建渲染器可执行文件
