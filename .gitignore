@@ -3,3 +3,5 @@ model/
 libtorch/
 backup_removed_files/
 backup_rasterizer_files/
+scripts/
+docs/
