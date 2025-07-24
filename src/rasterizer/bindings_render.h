@@ -1,7 +1,8 @@
-// Originally based on https://github.com/nerfstudio-project/gsplat
-// This implementation has been substantially changed and optimized
+// 3D Gaussian Splatting 渲染核心头文件 - 仅正向传播版本
+// 基于 gsplat 项目，专为渲染优化
 // Licensed under the AGPLv3
-// Piero Toffanin - 2024
+
+#pragma once
 
 #include <cstdio>
 #include <iostream>
@@ -10,8 +11,8 @@
 #include <tuple>
 #include <vector>
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,
-           torch::Tensor>
+// 投影3D高斯到2D屏幕空间
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 project_gaussians_forward_tensor_cpu(
     const int num_points, torch::Tensor &means3d, torch::Tensor &scales,
     const float glob_scale, torch::Tensor &quats, torch::Tensor &viewmat,
@@ -19,6 +20,7 @@ project_gaussians_forward_tensor_cpu(
     const float cy, const unsigned img_height, const unsigned img_width,
     const float clip_thresh);
 
+// 2D光栅化 - Alpha混合
 std::tuple<torch::Tensor, torch::Tensor, std::vector<int32_t> *>
 rasterize_forward_tensor_cpu(
     const int width, const int height, const torch::Tensor &xys,
@@ -26,24 +28,10 @@ rasterize_forward_tensor_cpu(
     const torch::Tensor &opacities, const torch::Tensor &background,
     const torch::Tensor &cov2d, const torch::Tensor &camDepths);
 
-std::tuple<torch::Tensor, // dL_dxy
-           torch::Tensor, // dL_dconic
-           torch::Tensor, // dL_dcolors
-           torch::Tensor  // dL_dopacity
-           >
-rasterize_backward_tensor_cpu(
-    const int height, const int width, const torch::Tensor &xys,
-    const torch::Tensor &conics, const torch::Tensor &colors,
-    const torch::Tensor &opacities, const torch::Tensor &background,
-    const torch::Tensor &cov2d, const torch::Tensor &camDepths,
-    const torch::Tensor &final_Ts, const std::vector<int32_t> *px2gid,
-    const torch::Tensor &v_output, // dL_dout_color
-    const torch::Tensor &v_output_alpha);
-
+// 球谐函数基数量
 int numShBases(int degree);
-torch::Tensor rgb2sh(const torch::Tensor &rgb);
-torch::Tensor sh2rgb(const torch::Tensor &sh);
 
+// 球谐函数正向计算 - 从视角方向和SH系数计算颜色
 torch::Tensor compute_sh_forward_tensor_cpu(const int degrees_to_use,
                                             const torch::Tensor &viewdirs,
                                             const torch::Tensor &coeffs);

@@ -1,19 +1,20 @@
-// Originally started from https://github.com/nerfstudio-project/gsplat
-// This implementation has been substantially changed and optimized
+// 3D Gaussian Splatting 渲染核心 - 仅正向传播版本
+// 基于 gsplat 项目，专为渲染优化
 // Licensed under the AGPLv3
-// Piero Toffanin - 2024
 
-#include "bindings.h"
+#include "bindings_render.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <iostream>
 #include <tuple>
 #include <vector>
 
+using namespace torch::indexing;
+
+// 基础数学结构体
 struct Vector2 {
   float x, y;
 };
@@ -33,8 +34,7 @@ struct Matrix4x4 {
   float data[4][4];
 };
 
-using namespace torch::indexing;
-
+// 矩阵运算
 Matrix3x3 multiply(const Matrix3x3 &a, const Matrix3x3 &b) {
   Matrix3x3 res{};
   for (int i = 0; i < 3; ++i)
@@ -44,6 +44,13 @@ Matrix3x3 multiply(const Matrix3x3 &a, const Matrix3x3 &b) {
   return res;
 }
 
+Matrix3x3 transpose(const Matrix3x3 &a) {
+  return {{{a.data[0][0], a.data[1][0], a.data[2][0]},
+           {a.data[0][1], a.data[1][1], a.data[2][1]},
+           {a.data[0][2], a.data[1][2], a.data[2][2]}}};
+}
+
+// 四元数转旋转矩阵
 Matrix3x3 quat_to_rot(const Vector4 &q) {
   const float w = q.w, x = q.x, y = q.y, z = q.z;
   return {{{1 - 2 * y * y - 2 * z * z, 2 * x * y - 2 * z * w,
@@ -54,99 +61,7 @@ Matrix3x3 quat_to_rot(const Vector4 &q) {
             1 - 2 * x * x - 2 * y * y}}};
 }
 
-Matrix3x3 transpose(const Matrix3x3 &a) {
-  return {{{a.data[0][0], a.data[1][0], a.data[2][0]},
-           {a.data[0][1], a.data[1][1], a.data[2][1]},
-           {a.data[0][2], a.data[1][2], a.data[2][2]}}};
-}
-
-std::tuple<Vector2, int32_t, Vector3, Matrix2x2, float>
-project_single_gaussian_forward_cpu(Vector3 means3d, Vector3 scale,
-                                    const float glob_scale, Vector4 quat,
-                                    Matrix4x4 viewmat, Matrix4x4 projmat,
-                                    const float fx, const float fy,
-                                    const float cx, const float cy,
-                                    const unsigned img_height,
-                                    const unsigned img_width) {
-  float eps = 1e-6;
-  float fovx = 0.5f * static_cast<float>(img_width) / fx;
-  float fovy = 0.5f * static_cast<float>(img_height) / fy;
-
-  float limX = 1.3f * fovx;
-  float limY = 1.3f * fovy;
-
-  const Matrix3x3 Rclip = {
-      {{viewmat.data[0][0], viewmat.data[0][1], viewmat.data[0][2]},
-       {viewmat.data[1][0], viewmat.data[1][1], viewmat.data[1][2]},
-       {viewmat.data[2][0], viewmat.data[2][1], viewmat.data[2][2]}}};
-  const Vector3 Tclip = {viewmat.data[0][3], viewmat.data[1][3],
-                         viewmat.data[2][3]};
-
-  Vector3 p_view = {
-      Rclip.data[0][0] * means3d.x + Rclip.data[0][1] * means3d.y +
-          Rclip.data[0][2] * means3d.z + Tclip.x,
-      Rclip.data[1][0] * means3d.x + Rclip.data[1][1] * means3d.y +
-          Rclip.data[1][2] * means3d.z + Tclip.y,
-      Rclip.data[2][0] * means3d.x + Rclip.data[2][1] * means3d.y +
-          Rclip.data[2][2] * means3d.z + Tclip.z};
-
-  // float r_norm = std::sqrt(quat.x*quat.x + quat.y*quat.y + quat.z*quat.z +
-  // quat.w*quat.w); r_norm = (r_norm > eps) ? r_norm : eps;
-  Matrix3x3 R = quat_to_rot(quat);
-  Matrix3x3 S = {{{scale.x * glob_scale, 0, 0},
-                  {0, scale.y * glob_scale, 0},
-                  {0, 0, scale.z * glob_scale}}};
-  Matrix3x3 M = multiply(R, S);
-  Matrix3x3 cov3d = multiply(M, transpose(M));
-
-  float minLimX =
-      p_view.z * std::min(limX, std::max(-limX, p_view.x / p_view.z));
-  float minLimY =
-      p_view.z * std::min(limY, std::max(-limY, p_view.y / p_view.z));
-
-  float rz = 1.0f / p_view.z;
-  float rz2 = rz * rz;
-  Matrix3x3 J = {{{fx * rz, 0, -fx * minLimX * rz2},
-                  {0, fy * rz, -fy * minLimY * rz2},
-                  {0, 0, 0}}};
-
-  Matrix3x3 T = multiply(J, Rclip);
-  Matrix3x3 cov2d_ = multiply(T, multiply(cov3d, transpose(T)));
-  Matrix2x2 cov2d = {{{cov2d_.data[0][0], cov2d_.data[0][1]},
-                      {cov2d_.data[1][0], cov2d_.data[1][1]}}};
-
-  cov2d.data[0][0] += 0.3f;
-  cov2d.data[1][1] += 0.3f;
-
-  float a1 = cov2d.data[0][0], a2 = cov2d.data[1][1], a3 = cov2d.data[0][1];
-  float det = a1 * a2 - a3 * a3;
-  det = std::max(det, eps);
-  Vector3 conic = {a1 / det, a3 / det, a2 / det};
-  float b = (a1 + a2) / 2.0f;
-  float sq = std::sqrt(std::max(b * b - det, 0.1f));
-  float v1 = b + sq, v2 = b - sq;
-  float radius = std::ceil(3.0f * std::sqrt(std::max(v1, v2)));
-  int32_t radii = int32_t(radius);
-
-  Vector4 pHom = {means3d.x, means3d.y, means3d.z, 1.0f};
-  pHom = {projmat.data[0][0] * pHom.x + projmat.data[0][1] * pHom.y +
-              projmat.data[0][2] * pHom.z + projmat.data[0][3],
-          projmat.data[1][0] * pHom.x + projmat.data[1][1] * pHom.y +
-              projmat.data[1][2] * pHom.z + projmat.data[1][3],
-          projmat.data[2][0] * pHom.x + projmat.data[2][1] * pHom.y +
-              projmat.data[2][2] * pHom.z + projmat.data[2][3],
-          projmat.data[3][0] * pHom.x + projmat.data[3][1] * pHom.y +
-              projmat.data[3][2] * pHom.z + projmat.data[3][3]};
-  float rw = 1.0f / std::max(pHom.w, eps);
-  Vector3 pProj = {rw * pHom.x, rw * pHom.y, rw * pHom.z};
-  float u = 0.5f * ((pProj.x + 1.0f) * static_cast<float>(img_width) - 1.0f);
-  float v = 0.5f * ((pProj.y + 1.0f) * static_cast<float>(img_height) - 1.0f);
-  Vector2 xys = {u, v};
-  float camDepths = pProj.z;
-
-  return std::make_tuple(xys, radii, conic, cov2d, camDepths);
-}
-
+// 投影高斯到2D屏幕空间
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,
            torch::Tensor>
 project_gaussians_forward_tensor_cpu(
@@ -155,52 +70,58 @@ project_gaussians_forward_tensor_cpu(
     torch::Tensor &projmat, const float fx, const float fy, const float cx,
     const float cy, const unsigned img_height, const unsigned img_width,
     const float clip_thresh) {
-  float eps = 1e-6f;
 
+  float eps = 1e-6f;
   float fovx = 0.5f * static_cast<float>(img_width) / fx;
   float fovy = 0.5f * static_cast<float>(img_height) / fy;
-
   float limX = 1.3f * fovx;
   float limY = 1.3f * fovy;
 
+  // 获取数据指针
   float *viewmat_ptr = viewmat.data_ptr<float>();
   float *means3d_ptr = means3d.data_ptr<float>();
   float *quats_ptr = quats.data_ptr<float>();
   float *scale_ptr = scales.data_ptr<float>();
   float *projmat_ptr = projmat.data_ptr<float>();
 
+  // 提取视图变换矩阵
   const Matrix3x3 Rclip = {{{viewmat_ptr[0], viewmat_ptr[1], viewmat_ptr[2]},
                             {viewmat_ptr[4], viewmat_ptr[5], viewmat_ptr[6]},
                             {viewmat_ptr[8], viewmat_ptr[9], viewmat_ptr[10]}}};
   const Vector3 Tclip = {viewmat_ptr[3], viewmat_ptr[7], viewmat_ptr[11]};
 
-  std::vector<float> v_xys;
+  // 输出数据向量
+  std::vector<float> v_xys, v_conic, v_cov2d, v_camDepths;
   std::vector<int> v_radii;
-  std::vector<float> v_conic;
-  std::vector<float> v_cov2d;
-  std::vector<float> v_camDepths;
 
-  for (std::size_t i = 0; i < num_points; i++) {
+  for (int i = 0; i < num_points; i++) {
+    // 获取3D点位置
     Vector3 p = {means3d_ptr[3 * i], means3d_ptr[3 * i + 1],
                  means3d_ptr[3 * i + 2]};
+
+    // 变换到相机空间
     Vector3 p_view = {Rclip.data[0][0] * p.x + Rclip.data[0][1] * p.y +
                           Rclip.data[0][2] * p.z + Tclip.x,
                       Rclip.data[1][0] * p.x + Rclip.data[1][1] * p.y +
                           Rclip.data[1][2] * p.z + Tclip.y,
                       Rclip.data[2][0] * p.x + Rclip.data[2][1] * p.y +
                           Rclip.data[2][2] * p.z + Tclip.z};
-    // if(p_view.z < 0.01f) continue;
-    Vector4 r = {quats_ptr[4 * i], quats_ptr[4 * i + 1], quats_ptr[4 * i + 2],
-                 quats_ptr[4 * i + 3]};
-    // float r_norm = std::sqrt(r.x*r.x + r.y*r.y + r.z*r.z + r.w*r.w);
-    // r_norm = (r_norm > eps) ? r_norm : eps;
-    Matrix3x3 R = quat_to_rot(r);
-    Matrix3x3 S = {{{scale_ptr[3 * i] * glob_scale, 0, 0},
-                    {0, scale_ptr[3 * i + 1] * glob_scale, 0},
-                    {0, 0, scale_ptr[3 * i + 2] * glob_scale}}};
+
+    // 获取四元数和缩放
+    Vector4 quat = {quats_ptr[4 * i], quats_ptr[4 * i + 1],
+                    quats_ptr[4 * i + 2], quats_ptr[4 * i + 3]};
+    Vector3 scale = {scale_ptr[3 * i], scale_ptr[3 * i + 1],
+                     scale_ptr[3 * i + 2]};
+
+    // 计算3D协方差矩阵
+    Matrix3x3 R = quat_to_rot(quat);
+    Matrix3x3 S = {{{scale.x * glob_scale, 0, 0},
+                    {0, scale.y * glob_scale, 0},
+                    {0, 0, scale.z * glob_scale}}};
     Matrix3x3 M = multiply(R, S);
     Matrix3x3 cov3d = multiply(M, transpose(M));
 
+    // 计算投影参数
     float minLimX =
         p_view.z * std::min(limX, std::max(-limX, p_view.x / p_view.z));
     float minLimY =
@@ -212,22 +133,27 @@ project_gaussians_forward_tensor_cpu(
                     {0, fy * rz, -fy * minLimY * rz2},
                     {0, 0, 0}}};
 
+    // 投影3D协方差到2D
     Matrix3x3 T = multiply(J, Rclip);
     Matrix3x3 cov2d = multiply(T, multiply(cov3d, transpose(T)));
 
+    // 添加模糊以增强数值稳定性
     cov2d.data[0][0] += 0.3f;
     cov2d.data[1][1] += 0.3f;
 
+    // 计算2D椭圆参数
     float a1 = cov2d.data[0][0], a2 = cov2d.data[1][1], a3 = cov2d.data[0][1];
-    float det = a1 * a2 - a3 * a3;
-    det = std::max(det, eps);
+    float det = std::max(a1 * a2 - a3 * a3, eps);
     Vector3 conic = {a2 / det, -a3 / det, a1 / det};
+
+    // 计算椭圆半径
     float b = (a1 + a2) / 2.0f;
     float sq = std::sqrt(std::max(b * b - det, 0.1f));
     float v1 = b + sq, v2 = b - sq;
     float radius = std::ceil(3.0f * std::sqrt(std::max(v1, v2)));
-    int radii = int(radius);
+    int radii = static_cast<int>(radius);
 
+    // 投影到屏幕坐标
     Vector4 pHom = {p.x, p.y, p.z, 1.0f};
     pHom = {projmat_ptr[0] * pHom.x + projmat_ptr[1] * pHom.y +
                 projmat_ptr[2] * pHom.z + projmat_ptr[3],
@@ -237,15 +163,15 @@ project_gaussians_forward_tensor_cpu(
                 projmat_ptr[10] * pHom.z + projmat_ptr[11],
             projmat_ptr[12] * pHom.x + projmat_ptr[13] * pHom.y +
                 projmat_ptr[14] * pHom.z + projmat_ptr[15]};
+
     float rw = 1.0f / std::max(pHom.w, eps);
     Vector3 pProj = {rw * pHom.x, rw * pHom.y, rw * pHom.z};
     float u = 0.5f * ((pProj.x + 1.0f) * static_cast<float>(img_width) - 1.0f);
     float v = 0.5f * ((pProj.y + 1.0f) * static_cast<float>(img_height) - 1.0f);
-    Vector2 xys = {u, v};
-    float camDepths = pProj.z;
 
-    v_xys.push_back(xys.x);
-    v_xys.push_back(xys.y);
+    // 存储结果
+    v_xys.push_back(u);
+    v_xys.push_back(v);
     v_radii.push_back(radii);
     v_conic.push_back(conic.x);
     v_conic.push_back(conic.y);
@@ -254,11 +180,11 @@ project_gaussians_forward_tensor_cpu(
     v_cov2d.push_back(a3);
     v_cov2d.push_back(a3);
     v_cov2d.push_back(a2);
-    v_camDepths.push_back(camDepths);
+    v_camDepths.push_back(pProj.z);
   }
 
+  // 转换为PyTorch张量
   torch::Tensor xys = torch::from_blob(v_xys.data(), {num_points, 2});
-  xys.requires_grad_(true);
   torch::Tensor radii =
       torch::from_blob(v_radii.data(), {num_points}, torch::kInt32);
   torch::Tensor conic = torch::from_blob(v_conic.data(), {num_points, 3});
@@ -270,12 +196,14 @@ project_gaussians_forward_tensor_cpu(
                          cov2d.clone(), camDepths.clone());
 }
 
+// 2D光栅化 - Alpha混合
 std::tuple<torch::Tensor, torch::Tensor, std::vector<int32_t> *>
 rasterize_forward_tensor_cpu(
     const int width, const int height, const torch::Tensor &xys,
     const torch::Tensor &conics, const torch::Tensor &colors,
     const torch::Tensor &opacities, const torch::Tensor &background,
     const torch::Tensor &cov2d, const torch::Tensor &camDepths) {
+
   torch::NoGradGuard noGrad;
 
   int channels = colors.size(1);
@@ -283,6 +211,7 @@ rasterize_forward_tensor_cpu(
   float *pDepths = static_cast<float *>(camDepths.data_ptr());
   std::vector<int32_t> *px2gid = new std::vector<int32_t>[width * height];
 
+  // 按深度排序高斯
   std::vector<size_t> gIndices(numPoints);
   std::iota(gIndices.begin(), gIndices.end(), 0);
   std::sort(gIndices.begin(), gIndices.end(),
@@ -290,6 +219,7 @@ rasterize_forward_tensor_cpu(
 
   torch::Device device = xys.device();
 
+  // 初始化输出张量
   torch::Tensor outImg = torch::zeros(
       {height, width, channels},
       torch::TensorOptions().dtype(torch::kFloat32).device(device));
@@ -300,27 +230,28 @@ rasterize_forward_tensor_cpu(
       torch::zeros({height, width},
                    torch::TensorOptions().dtype(torch::kBool).device(device));
 
+  // 计算椭圆边界
   torch::Tensor sqCov2dX = 3.0f * torch::sqrt(cov2d.index({"...", 0, 0}));
   torch::Tensor sqCov2dY = 3.0f * torch::sqrt(cov2d.index({"...", 1, 1}));
 
+  // 获取数据指针
   float *pConics = static_cast<float *>(conics.data_ptr());
   float *pCenters = static_cast<float *>(xys.data_ptr());
   float *pSqCov2dX = static_cast<float *>(sqCov2dX.data_ptr());
   float *pSqCov2dY = static_cast<float *>(sqCov2dY.data_ptr());
   float *pOpacities = static_cast<float *>(opacities.data_ptr());
-
   float *pOutImg = static_cast<float *>(outImg.data_ptr());
   float *pFinalTs = static_cast<float *>(finalTs.data_ptr());
   bool *pDone = static_cast<bool *>(done.data_ptr());
-
   float *pColors = static_cast<float *>(colors.data_ptr());
 
-  float bgX = background[0].item<float>();
-  float bgY = background[1].item<float>();
-  float bgZ = background[2].item<float>();
+  float bgR = background[0].item<float>();
+  float bgG = background[1].item<float>();
+  float bgB = background[2].item<float>();
 
   const float alphaThresh = 1.0f / 255.0f;
 
+  // 逐个渲染高斯
   for (int idx = 0; idx < numPoints; idx++) {
     int32_t gaussianId = gIndices[idx];
 
@@ -334,11 +265,13 @@ rasterize_forward_tensor_cpu(
     float sqx = pSqCov2dX[gaussianId];
     float sqy = pSqCov2dY[gaussianId];
 
-    int minx = (std::max)(0, static_cast<int>(std::floor(gY - sqy)) - 2);
-    int maxx = (std::min)(height, static_cast<int>(std::ceil(gY + sqy)) + 2);
-    int miny = (std::max)(0, static_cast<int>(std::floor(gX - sqx)) - 2);
-    int maxy = (std::min)(width, static_cast<int>(std::ceil(gX + sqx)) + 2);
+    // 计算包围盒
+    int minx = std::max(0, static_cast<int>(std::floor(gY - sqy)) - 2);
+    int maxx = std::min(height, static_cast<int>(std::ceil(gY + sqy)) + 2);
+    int miny = std::max(0, static_cast<int>(std::floor(gX - sqx)) - 2);
+    int maxy = std::min(width, static_cast<int>(std::ceil(gX + sqx)) + 2);
 
+    // 逐像素渲染
     for (int i = minx; i < maxx; i++) {
       for (int j = miny; j < maxy; j++) {
         size_t pixIdx = (i * width + j);
@@ -348,24 +281,25 @@ rasterize_forward_tensor_cpu(
         float xCam = gX - j;
         float yCam = gY - i;
         float sigma =
-            (0.5f * (A * xCam * xCam + C * yCam * yCam) + B * xCam * yCam);
+            0.5f * (A * xCam * xCam + C * yCam * yCam) + B * xCam * yCam;
 
         if (sigma < 0.0f)
           continue;
         float alpha =
-            (std::min)(0.999f, (pOpacities[gaussianId] * std::exp(-sigma)));
+            std::min(0.999f, pOpacities[gaussianId] * std::exp(-sigma));
         if (alpha < alphaThresh)
           continue;
 
         float T = pFinalTs[pixIdx];
         float nextT = T * (1.0f - alpha);
-        if (nextT <= 1e-4f) { // this pixel is done
+        if (nextT <= 1e-4f) {
           pDone[pixIdx] = true;
           continue;
         }
 
         float vis = alpha * T;
 
+        // Alpha混合
         pOutImg[pixIdx * 3 + 0] += vis * pColors[gaussianId * 3 + 0];
         pOutImg[pixIdx * 3 + 1] += vis * pColors[gaussianId * 3 + 1];
         pOutImg[pixIdx * 3 + 2] += vis * pColors[gaussianId * 3 + 2];
@@ -376,15 +310,15 @@ rasterize_forward_tensor_cpu(
     }
   }
 
-  // Background
+  // 添加背景色
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
       size_t pixIdx = (i * width + j);
       float T = pFinalTs[pixIdx];
 
-      pOutImg[pixIdx * 3 + 0] += T * bgX;
-      pOutImg[pixIdx * 3 + 1] += T * bgY;
-      pOutImg[pixIdx * 3 + 2] += T * bgZ;
+      pOutImg[pixIdx * 3 + 0] += T * bgR;
+      pOutImg[pixIdx * 3 + 1] += T * bgG;
+      pOutImg[pixIdx * 3 + 2] += T * bgB;
 
       std::reverse(px2gid[pixIdx].begin(), px2gid[pixIdx].end());
     }
@@ -393,6 +327,7 @@ rasterize_forward_tensor_cpu(
   return std::make_tuple(outImg, finalTs, px2gid);
 }
 
+// 球谐函数常数
 const float SH_C0 = 0.28209479177387814f;
 const float SH_C1 = 0.4886025119029199f;
 const float SH_C2[] = {1.0925484305920792f, -1.0925484305920792f,
@@ -422,54 +357,29 @@ int numShBases(int degree) {
   }
 }
 
-torch::Tensor rgb2sh(const torch::Tensor &rgb) {
-  // Converts from RGB values [0,1] to the 0th spherical harmonic coefficient
-  return (rgb - 0.5) / SH_C0;
-}
-
-torch::Tensor sh2rgb(const torch::Tensor &sh) {
-  // Converts from 0th spherical harmonic coefficients to RGB values [0,1]
-  return torch::clamp((sh * SH_C0) + 0.5, 0.0f, 1.0f);
-}
-
+// 球谐函数正向计算
 torch::Tensor compute_sh_forward_tensor_cpu(const int degrees_to_use,
                                             const torch::Tensor &viewdirs,
                                             const torch::Tensor &coeffs) {
-  const int numChannels = 3;
   unsigned numBases = numShBases(degrees_to_use);
-  size_t num_points = coeffs.size(0);
-  std::vector<float> v_result;
-  // for(size_t i = 0; i < num_points; i++) {
-  //     v_result.push_back(SH_C0);
-  //     if (numBases > 1) {
-  //         v_result.push_back()
-  //     }
-  // }
-
-  // const int numChannels = 3;
-  // unsigned numBases = numShBases(degrees_to_use);
 
   torch::Tensor result = torch::zeros(
       {viewdirs.size(0), coeffs.size(-2)},
       torch::TensorOptions().dtype(torch::kFloat32).device(viewdirs.device()));
 
   result.index_put_({"...", 0}, SH_C0);
+
   if (numBases > 1) {
     std::vector<torch::Tensor> xyz = viewdirs.unbind(-1);
-    torch::Tensor x = xyz[0];
-    torch::Tensor y = xyz[1];
-    torch::Tensor z = xyz[2];
+    torch::Tensor x = xyz[0], y = xyz[1], z = xyz[2];
+
     result.index_put_({"...", 1}, SH_C1 * -y);
     result.index_put_({"...", 2}, SH_C1 * z);
     result.index_put_({"...", 3}, SH_C1 * -x);
 
     if (numBases > 4) {
-      torch::Tensor xx = x * x;
-      torch::Tensor yy = y * y;
-      torch::Tensor zz = z * z;
-      torch::Tensor xy = x * y;
-      torch::Tensor yz = y * z;
-      torch::Tensor xz = x * z;
+      torch::Tensor xx = x * x, yy = y * y, zz = z * z;
+      torch::Tensor xy = x * y, yz = y * z, xz = x * z;
 
       result.index_put_({"...", 4}, SH_C2[0] * xy);
       result.index_put_({"...", 5}, SH_C2[1] * yz);
@@ -502,5 +412,6 @@ torch::Tensor compute_sh_forward_tensor_cpu(const int degrees_to_use,
       }
     }
   }
+
   return (result.index({"...", None}) * coeffs).sum(-2);
 }

@@ -42,11 +42,11 @@ find_package(Eigen3 REQUIRED)
 
 # 定义链接库
 set(OpenCV_LIBS opencv_core opencv_imgproc opencv_highgui opencv_calib3d)
-set(GSPLAT_LIBS gsplat_cpu)
+set(GSPLAT_LIBS gsplat_render)
 
-# 创建 gsplat_cpu 库
-add_library(gsplat_cpu src/rasterizer/gsplat-cpu/gsplat_cpu.cpp)
-target_include_directories(gsplat_cpu PRIVATE ${TORCH_INCLUDE_DIRS})
+# 创建 gsplat_render 库（简化的渲染专用版本）
+add_library(gsplat_render src/rasterizer/gsplat_render.cpp)
+target_include_directories(gsplat_render PRIVATE ${TORCH_INCLUDE_DIRS})
 
 # 定义渲染器可执行文件的源文件
 set(OPENSPLAT_RENDER_SRC_FILES

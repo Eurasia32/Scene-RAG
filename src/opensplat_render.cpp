@@ -1,43 +1,73 @@
 #include "constants.hpp"
 #include "cv_utils_render.hpp"
 #include "model_render.hpp"
+#include "rasterizer/bindings_render.h"
 #include <cxxopts.hpp>
 #include <filesystem>
-#include <gsplat-cpu/bindings.h>
 #include <iostream>
+#include <sstream>
 #include <vector>
 
 namespace fs = std::filesystem;
 using namespace torch::indexing;
 
 /**
- * @brief 从一个包含16个浮点数的vector解析一个4x4的PyTorch张量。
- * @param v 包含16个浮点数的vector，按行主序排列。
- * @return 一个4x4的torch::Tensor。
+ * @brief 从字符串解析视图矩阵，支持多种格式
+ * @param matrix_str 矩阵字符串，支持空格或逗号分隔
+ * @return 一个4x4的torch::Tensor
  */
-torch::Tensor parseViewMatrix(const std::vector<float> &v) {
-  if (v.size() != 16) {
-    throw std::invalid_argument("视图矩阵必须包含16个元素。");
+torch::Tensor parseViewMatrix(const std::string &matrix_str) {
+  std::vector<float> values;
+  std::istringstream iss(matrix_str);
+  std::string token;
+  
+  // 用空格分隔解析
+  while (iss >> token) {
+    try {
+      values.push_back(std::stof(token));
+    } catch (const std::exception &e) {
+      throw std::invalid_argument("视图矩阵包含无效数字: " + token);
+    }
   }
-  return torch::from_blob((void *)v.data(), {4, 4}, torch::kFloat32).clone();
+  
+  // 如果空格分隔失败，尝试逗号分隔
+  if (values.empty()) {
+    std::stringstream ss(matrix_str);
+    while (std::getline(ss, token, ',')) {
+      if (!token.empty()) {
+        try {
+          values.push_back(std::stof(token));
+        } catch (const std::exception &e) {
+          throw std::invalid_argument("视图矩阵包含无效数字: " + token);
+        }
+      }
+    }
+  }
+  
+  if (values.size() != 16) {
+    throw std::invalid_argument("视图矩阵必须包含16个元素，当前有 " + std::to_string(values.size()) + " 个元素。");
+  }
+  
+  return torch::from_blob((void *)values.data(), {4, 4}, torch::kFloat32).clone();
 }
-
 
 int main(int argc, char *argv[]) {
   // 1. 解析命令行参数
   cxxopts::Options options("opensplat_render", "3D高斯溅射模型渲染器");
-  
-  options.add_options()
-    ("h,help", "显示帮助信息")
-    ("i,input", "输入PLY文件路径", cxxopts::value<std::string>())
-    ("o,output", "输出图像路径", cxxopts::value<std::string>()->default_value("output.png"))
-    ("d,downscale", "降采样倍数", cxxopts::value<float>()->default_value("1.0"))
-    ("s,sh-degree", "球谐函数阶数", cxxopts::value<int>()->default_value("3"))
-    ("m,view-matrix", "16个元素的视图变换矩阵(行主序)", cxxopts::value<std::vector<float>>())
-    ("width", "图像宽度", cxxopts::value<int>()->default_value("800"))
-    ("height", "图像高度", cxxopts::value<int>()->default_value("600"))
-    ("fx", "焦距fx", cxxopts::value<float>()->default_value("400.0"))
-    ("fy", "焦距fy", cxxopts::value<float>()->default_value("400.0"));
+
+  options.add_options()("h,help", "显示帮助信息")(
+      "i,input", "输入PLY文件路径", cxxopts::value<std::string>())(
+      "o,output", "输出图像路径",
+      cxxopts::value<std::string>()->default_value("output.png"))(
+      "d,downscale", "降采样倍数",
+      cxxopts::value<float>()->default_value("1.0"))(
+      "s,sh-degree", "球谐函数阶数", cxxopts::value<int>()->default_value("3"))(
+      "m,view-matrix", "16个元素的视图变换矩阵(行主序)，用空格或逗号分隔",
+      cxxopts::value<std::string>())(
+      "width", "图像宽度", cxxopts::value<int>()->default_value("800"))(
+      "height", "图像高度", cxxopts::value<int>()->default_value("600"))(
+      "fx", "焦距fx", cxxopts::value<float>()->default_value("400.0"))(
+      "fy", "焦距fy", cxxopts::value<float>()->default_value("400.0"));
 
   cxxopts::ParseResult result;
   try {
@@ -48,7 +78,8 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  if (result.count("help") || !result.count("input") || !result.count("view-matrix")) {
+  if (result.count("help") || !result.count("input") ||
+      !result.count("view-matrix")) {
     std::cout << options.help() << std::endl;
     return 0;
   }
@@ -62,7 +93,7 @@ int main(int argc, char *argv[]) {
   const int height = result["height"].as<int>();
   const float fx = result["fx"].as<float>();
   const float fy = result["fy"].as<float>();
-  const auto view_matrix_vec = result["view-matrix"].as<std::vector<float>>();
+  const auto view_matrix_str = result["view-matrix"].as<std::string>();
 
   try {
     // 3. 设置计算设备
@@ -81,18 +112,21 @@ int main(int argc, char *argv[]) {
     // 5. 计算渲染参数
     const float render_fx = fx / downscale_factor;
     const float render_fy = fy / downscale_factor;
-    const int render_height = static_cast<int>(static_cast<float>(height) / downscale_factor);
-    const int render_width = static_cast<int>(static_cast<float>(width) / downscale_factor);
+    const int render_height =
+        static_cast<int>(static_cast<float>(height) / downscale_factor);
+    const int render_width =
+        static_cast<int>(static_cast<float>(width) / downscale_factor);
     const float render_cx = static_cast<float>(render_width) / 2.0f;
     const float render_cy = static_cast<float>(render_height) / 2.0f;
 
     // 6. 解析视图矩阵
-    torch::Tensor cam_to_world = parseViewMatrix(view_matrix_vec).to(device);
+    torch::Tensor cam_to_world = parseViewMatrix(view_matrix_str).to(device);
     torch::Tensor R = cam_to_world.index({Slice(None, 3), Slice(None, 3)});
     torch::Tensor T = cam_to_world.index({Slice(None, 3), Slice(3, 4)});
 
     // 调整坐标系以匹配gsplat约定
-    R = torch::matmul(R, torch::diag(torch::tensor({1.0f, -1.0f, -1.0f}, R.device())));
+    R = torch::matmul(
+        R, torch::diag(torch::tensor({1.0f, -1.0f, -1.0f}, R.device())));
 
     // 计算世界到相机变换
     torch::Tensor Rinv = R.transpose(0, 1);
@@ -103,9 +137,12 @@ int main(int argc, char *argv[]) {
     viewMat.index_put_({Slice(None, 3), Slice(3, 4)}, Tinv);
 
     // 计算投影矩阵
-    float fovX = 2.0f * std::atan(static_cast<float>(render_width) / (2.0f * render_fx));
-    float fovY = 2.0f * std::atan(static_cast<float>(render_height) / (2.0f * render_fy));
-    torch::Tensor projMat = projectionMatrix(0.001f, 1000.0f, fovX, fovY, device);
+    float fovX =
+        2.0f * std::atan(static_cast<float>(render_width) / (2.0f * render_fx));
+    float fovY = 2.0f * std::atan(static_cast<float>(render_height) /
+                                  (2.0f * render_fy));
+    torch::Tensor projMat =
+        projectionMatrix(0.001f, 1000.0f, fovX, fovY, device);
     torch::Tensor fullProjMat = torch::matmul(projMat, viewMat);
 
     // 7. 执行渲染
@@ -117,7 +154,7 @@ int main(int argc, char *argv[]) {
     torch::Tensor scales_exp = torch::exp(model.scales);
     torch::Tensor quats_norm = model.quats / model.quats.norm(2, {-1}, true);
 
-    std::tie(xys, radii, conics, cov2d, camDepths) = 
+    std::tie(xys, radii, conics, cov2d, camDepths) =
         project_gaussians_forward_tensor_cpu(
             num_points, model.means, scales_exp, 1.0f, quats_norm, viewMat,
             fullProjMat, render_fx, render_fy, render_cx, render_cy,
@@ -134,8 +171,10 @@ int main(int argc, char *argv[]) {
     torch::Tensor viewDirs = model.means.detach() - T.transpose(0, 1);
     viewDirs = viewDirs / viewDirs.norm(2, {-1}, true);
     torch::Tensor colors = torch::cat(
-        {model.featuresDc.index({Slice(), None, Slice()}), model.featuresRest}, 1);
-    torch::Tensor rgbs = compute_sh_forward_tensor_cpu(sh_degree, viewDirs, colors);
+        {model.featuresDc.index({Slice(), None, Slice()}), model.featuresRest},
+        1);
+    torch::Tensor rgbs =
+        compute_sh_forward_tensor_cpu(sh_degree, viewDirs, colors);
     rgbs = torch::clamp_min(rgbs + 0.5f, 0.0f);
 
     // 光栅化
@@ -156,7 +195,8 @@ int main(int argc, char *argv[]) {
     cv::imwrite(output_path, image);
 
     std::cout << "渲染完成，图像已保存至: " << output_path << std::endl;
-    std::cout << "渲染尺寸: " << render_width << "x" << render_height << std::endl;
+    std::cout << "渲染尺寸: " << render_width << "x" << render_height
+              << std::endl;
 
   } catch (const std::exception &e) {
     std::cerr << "错误: " << e.what() << std::endl;

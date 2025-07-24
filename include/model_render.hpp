@@ -1,9 +1,9 @@
 #ifndef MODEL_H
 #define MODEL_H
 
+#include <bindings_render.h>
 #include <filesystem>
 #include <fstream>
-#include <gsplat-cpu/bindings.h>
 #include <iostream>
 #include <torch/torch.h>
 

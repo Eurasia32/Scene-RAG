@@ -1,4 +1,4 @@
-#include "model.hpp"
+#include "model_render.hpp"
 #include "constants.hpp"
 #include <filesystem>
 
@@ -67,8 +67,10 @@ int Model::loadPly(const std::string &filename) {
 
   // 为CPU张量分配内存
   torch::Tensor meansCpu = torch::zeros({numPoints, 3}, torch::kFloat32);
-  torch::Tensor featuresDcCpu = torch::zeros({numPoints, features_dc_size}, torch::kFloat32);
-  torch::Tensor featuresRestCpu = torch::zeros({numPoints, features_rest_size}, torch::kFloat32);
+  torch::Tensor featuresDcCpu =
+      torch::zeros({numPoints, features_dc_size}, torch::kFloat32);
+  torch::Tensor featuresRestCpu =
+      torch::zeros({numPoints, features_rest_size}, torch::kFloat32);
   torch::Tensor opacitiesCpu = torch::zeros({numPoints, 1}, torch::kFloat32);
   torch::Tensor scalesCpu = torch::zeros({numPoints, 3}, torch::kFloat32);
   torch::Tensor quatsCpu = torch::zeros({numPoints, 4}, torch::kFloat32);
@@ -77,11 +79,16 @@ int Model::loadPly(const std::string &filename) {
   // 读取二进制数据
   for (int i = 0; i < numPoints; ++i) {
     f.read(reinterpret_cast<char *>(meansCpu[i].data_ptr()), sizeof(float) * 3);
-    f.read(reinterpret_cast<char *>(&normals_buffer), sizeof(float) * 3); // 读取但不使用法线
-    f.read(reinterpret_cast<char *>(featuresDcCpu[i].data_ptr()), sizeof(float) * features_dc_size);
-    f.read(reinterpret_cast<char *>(featuresRestCpu[i].data_ptr()), sizeof(float) * features_rest_size);
-    f.read(reinterpret_cast<char *>(opacitiesCpu[i].data_ptr()), sizeof(float) * 1);
-    f.read(reinterpret_cast<char *>(scalesCpu[i].data_ptr()), sizeof(float) * 3);
+    f.read(reinterpret_cast<char *>(&normals_buffer),
+           sizeof(float) * 3); // 读取但不使用法线
+    f.read(reinterpret_cast<char *>(featuresDcCpu[i].data_ptr()),
+           sizeof(float) * features_dc_size);
+    f.read(reinterpret_cast<char *>(featuresRestCpu[i].data_ptr()),
+           sizeof(float) * features_rest_size);
+    f.read(reinterpret_cast<char *>(opacitiesCpu[i].data_ptr()),
+           sizeof(float) * 1);
+    f.read(reinterpret_cast<char *>(scalesCpu[i].data_ptr()),
+           sizeof(float) * 3);
     f.read(reinterpret_cast<char *>(quatsCpu[i].data_ptr()), sizeof(float) * 4);
   }
   f.close();
@@ -89,7 +96,8 @@ int Model::loadPly(const std::string &filename) {
   // 将张量移动到目标设备
   means = meansCpu.to(device);
   featuresDc = featuresDcCpu.to(device);
-  featuresRest = featuresRestCpu.reshape({numPoints, num_sh_features, 3}).to(device);
+  featuresRest =
+      featuresRestCpu.reshape({numPoints, num_sh_features, 3}).to(device);
   opacities = opacitiesCpu.to(device);
   scales = scalesCpu.to(device);
   quats = quatsCpu.to(device);
