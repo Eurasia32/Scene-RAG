@@ -1,0 +1,17 @@
+# GSRender Python接口核心依赖
+numpy>=1.19.0
+torch>=1.9.0
+opencv-python>=4.5.0
+pybind11>=2.6.0
+
+# 可选依赖 - CLIP集成
+# git+https://github.com/openai/CLIP.git
+# pillow>=8.0.0
+
+# 可选依赖 - SAM集成  
+# git+https://github.com/facebookresearch/segment-anything.git
+
+# 开发和测试依赖
+# pytest>=6.0.0
+# black>=21.0.0
+# flake8>=3.8.0

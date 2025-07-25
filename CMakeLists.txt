@@ -75,6 +75,99 @@ target_link_libraries(opensplat_render PRIVATE
 )
 target_link_libraries(opensplat_render PUBLIC pthread)
 
+# Python扩展支持 (可选)
+option(WITH_PYTHON "Build Python bindings" OFF)
+
+if(WITH_PYTHON)
+    message(STATUS "Python bindings enabled")
+    
+    # 查找Python和pybind11
+    find_package(Python COMPONENTS Interpreter Development REQUIRED)
+    
+    # 尝试使用pip安装的pybind11
+    execute_process(
+        COMMAND ${Python_EXECUTABLE} -m pybind11 --cmakedir
+        OUTPUT_VARIABLE pybind11_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE pybind11_RESULT
+    )
+    
+    if(pybind11_RESULT EQUAL 0)
+        message(STATUS "Found pybind11 via pip: ${pybind11_DIR}")
+        find_package(pybind11 REQUIRED HINTS ${pybind11_DIR})
+    else()
+        # 回退到系统pybind11
+        find_package(pybind11 REQUIRED)
+    endif()
+    
+    # GSRender核心库 (用于Python绑定)
+    add_library(gsrender_core STATIC
+        src/gsrender_interface.cpp
+        src/model_render.cpp
+        src/cv_utils_render.cpp
+        src/rasterizer/gsplat_render.cpp
+    )
+    
+    target_include_directories(gsrender_core PUBLIC
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/src/rasterizer
+        ${TORCH_INCLUDE_DIRS}
+    )
+    
+    target_link_libraries(gsrender_core PUBLIC 
+        ${TORCH_LIBRARIES} 
+        ${OpenCV_LIBS}
+        pthread
+    )
+    
+    # Python扩展模块
+    pybind11_add_module(gsrender 
+        src/python_bindings.cpp
+    )
+    
+    target_link_libraries(gsrender PRIVATE 
+        gsrender_core
+        ${TORCH_LIBRARIES}
+        ${OpenCV_LIBS}
+    )
+    
+    target_include_directories(gsrender PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/src/rasterizer
+    )
+    
+    # 设置Python模块属性
+    target_compile_definitions(gsrender PRIVATE VERSION_INFO="${EXAMPLE_VERSION_INFO}")
+    set_target_properties(gsrender PROPERTIES 
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+    )
+    
+    # 安装Python模块 (可选)
+    if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+        # 如果没有指定安装路径，使用Python的site-packages
+        execute_process(
+            COMMAND ${Python_EXECUTABLE} -c "import site; print(site.getsitepackages()[0])"
+            OUTPUT_VARIABLE PYTHON_SITE_PACKAGES
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        set(CMAKE_INSTALL_PREFIX ${PYTHON_SITE_PACKAGES})
+    endif()
+    
+    install(TARGETS gsrender DESTINATION .)
+    
+    # 添加自定义目标用于Python模块安装
+    add_custom_target(install_python
+        COMMAND ${CMAKE_COMMAND} --build . --target gsrender
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:gsrender> ${CMAKE_CURRENT_SOURCE_DIR}/
+        COMMENT "Installing Python module to source directory"
+        DEPENDS gsrender
+    )
+    
+    message(STATUS "Python module will be built as: gsrender${PYTHON_MODULE_EXTENSION}")
+    message(STATUS "Python install prefix: ${CMAKE_INSTALL_PREFIX}")
+endif()
+
 # 如果需要保留原始的opensplat可执行文件，取消注释以下部分：
 # set(OPENSPLAT_ORIGINAL_SRC_FILES
 #     src/opensplat.cpp
