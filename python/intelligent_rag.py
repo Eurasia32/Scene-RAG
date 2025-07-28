@@ -16,7 +16,6 @@ from enum import Enum
 import logging
 from abc import ABC, abstractmethod
 import openai
-import anthropic
 from sklearn.preprocessing import MinMaxScaler
 from scipy.spatial.distance import cdist
 import faiss
@@ -65,12 +64,14 @@ class LLMProvider(ABC):
         """分析查询意图"""
         pass
 
-class OpenAIProvider(LLMProvider):
-    """OpenAI GPT提供商"""
+class OpenAICompatibleProvider(LLMProvider):
+    """OpenAI兼容API提供商（支持OpenAI、Azure OpenAI、vLLM、Ollama等）"""
     
-    def __init__(self, api_key: str, model: str = "gpt-4"):
-        self.client = openai.AsyncOpenAI(api_key=api_key)
+    def __init__(self, api_key: str, base_url: str = "https://api.openai.com/v1", 
+                 model: str = "gpt-4"):
+        self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model = model
+        self.base_url = base_url
     
     async def analyze_query_intent(self, query: str, context: Dict = None) -> QueryIntent:
         """使用GPT分析查询意图"""
@@ -162,119 +163,6 @@ class OpenAIProvider(LLMProvider):
                 "text_similarity": 0.3,
                 "visual_similarity": 0.1,
                 "spatial_relevance": 0.1,
-                "multi_view_consistency": 0.1
-            }
-        )
-
-class ClaudeProvider(LLMProvider):
-    """Anthropic Claude提供商"""
-    
-    def __init__(self, api_key: str, model: str = "claude-3-sonnet-20240229"):
-        self.client = anthropic.AsyncAnthropic(api_key=api_key)
-        self.model = model
-    
-    async def analyze_query_intent(self, query: str, context: Dict = None) -> QueryIntent:
-        """使用Claude分析查询意图"""
-        
-        system_prompt = """你是3D场景理解专家。请分析用户查询并返回JSON格式的意图结构。
-
-要求：
-1. 准确识别查询中的对象、空间关系、视觉特征
-2. 推断用户的查询意图类型
-3. 为不同匹配因子分配合理的权重
-4. 返回结构化的JSON，不要额外解释"""
-
-        try:
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=1000,
-                temperature=0.1,
-                system=system_prompt,
-                messages=[{"role": "user", "content": f"分析查询: {query}"}]
-            )
-            
-            content = response.content[0].text
-            
-            # 提取JSON
-            start_idx = content.find('{')
-            end_idx = content.rfind('}') + 1
-            
-            if start_idx != -1 and end_idx != -1:
-                json_str = content[start_idx:end_idx]
-                intent_data = json.loads(json_str)
-                return QueryIntent.from_dict(intent_data)
-            else:
-                raise ValueError("无法解析Claude响应")
-                
-        except Exception as e:
-            logger.error(f"Claude API调用失败: {e}")
-            return self._create_fallback_intent(query)
-    
-    def _create_fallback_intent(self, query: str) -> QueryIntent:
-        """创建回退意图"""
-        return QueryIntent(
-            query_type=QueryType.OBJECT_SEARCH,
-            primary_objects=[query.split()[0] if query.split() else "object"],
-            secondary_objects=[],
-            spatial_constraints={},
-            visual_attributes={},
-            semantic_context={},
-            confidence=0.5,
-            priority_weights={
-                "vector_similarity": 0.4,
-                "text_similarity": 0.3,
-                "visual_similarity": 0.1,
-                "spatial_relevance": 0.1,
-                "multi_view_consistency": 0.1
-            }
-        )
-
-class LocalLLMProvider(LLMProvider):
-    """本地LLM提供商（使用开源模型）"""
-    
-    def __init__(self, model_name: str = "mistral-7b-instruct"):
-        self.model_name = model_name
-        # 这里可以集成Ollama、vLLM等本地推理引擎
-        
-    async def analyze_query_intent(self, query: str, context: Dict = None) -> QueryIntent:
-        """使用本地模型分析意图"""
-        # 简化实现，实际可以调用本地模型API
-        logger.info(f"使用本地模型 {self.model_name} 分析查询: {query}")
-        
-        # 基于规则的简单意图分析
-        return self._rule_based_analysis(query)
-    
-    def _rule_based_analysis(self, query: str) -> QueryIntent:
-        """基于规则的意图分析"""
-        query_lower = query.lower()
-        
-        # 提取对象
-        furniture_words = ['chair', 'table', 'sofa', 'bed', 'desk', 'cabinet']
-        primary_objects = [word for word in furniture_words if word in query_lower]
-        
-        # 提取空间词汇
-        spatial_words = ['near', 'next to', 'center', 'corner', 'left', 'right']
-        has_spatial = any(word in query_lower for word in spatial_words)
-        
-        # 提取颜色
-        color_words = ['red', 'blue', 'green', 'white', 'black', 'brown']
-        colors = [color for color in color_words if color in query_lower]
-        
-        query_type = QueryType.COMPOSITE_QUERY if has_spatial and primary_objects else QueryType.OBJECT_SEARCH
-        
-        return QueryIntent(
-            query_type=query_type,
-            primary_objects=primary_objects or ['object'],
-            secondary_objects=[],
-            spatial_constraints={'has_spatial': has_spatial},
-            visual_attributes={'colors': colors},
-            semantic_context={},
-            confidence=0.7,
-            priority_weights={
-                "vector_similarity": 0.3,
-                "text_similarity": 0.25,
-                "visual_similarity": 0.2,
-                "spatial_relevance": 0.15,
                 "multi_view_consistency": 0.1
             }
         )
@@ -1162,36 +1050,32 @@ class IntelligentRAG:
         logger.info("缓存已清空")
 
 # 工厂函数和便捷接口
-def create_intelligent_rag(model_path: str, provider_type: str = "local", 
-                          api_key: str = None, **kwargs) -> IntelligentRAG:
+def create_intelligent_rag(model_path: str, api_key: str, 
+                          base_url: str = "https://api.openai.com/v1", 
+                          model: str = "gpt-4", **kwargs) -> IntelligentRAG:
     """
     创建智能RAG系统
     
     Args:
         model_path: 3DGS模型路径
-        provider_type: LLM提供商类型 ("openai", "claude", "local")
-        api_key: API密钥（对于远程提供商）
+        api_key: OpenAI兼容API密钥
+        base_url: API基础URL (默认OpenAI, 也支持其他兼容提供商)
+        model: 模型名称
         **kwargs: 其他参数
         
     Returns:
         配置好的IntelligentRAG实例
     """
-    # 创建LLM提供商
-    if provider_type.lower() == "openai":
-        if not api_key:
-            raise ValueError("OpenAI提供商需要API密钥")
-        llm_provider = OpenAIProvider(api_key, kwargs.get('model', 'gpt-4'))
+    # 创建OpenAI兼容的LLM提供商
+    if not api_key:
+        raise ValueError("需要提供API密钥")
     
-    elif provider_type.lower() == "claude":
-        if not api_key:
-            raise ValueError("Claude提供商需要API密钥")
-        llm_provider = ClaudeProvider(api_key, kwargs.get('model', 'claude-3-sonnet-20240229'))
-    
-    elif provider_type.lower() == "local":
-        llm_provider = LocalLLMProvider(kwargs.get('model', 'mistral-7b-instruct'))
-    
-    else:
-        raise ValueError(f"不支持的提供商类型: {provider_type}")
+    # 创建OpenAI客户端，支持自定义base_url以兼容其他提供商
+    llm_provider = OpenAICompatibleProvider(
+        api_key=api_key, 
+        base_url=base_url,
+        model=model
+    )
     
     # 创建智能RAG系统
     return IntelligentRAG(
@@ -1200,22 +1084,29 @@ def create_intelligent_rag(model_path: str, provider_type: str = "local",
         vector_db_path=kwargs.get('vector_db_path')
     )
 
-async def quick_search(query: str, model_path: str, provider_type: str = "local",
-                      api_key: str = None, top_k: int = 10) -> Dict:
+async def quick_search(query: str, model_path: str, api_key: str,
+                      base_url: str = "https://api.openai.com/v1",
+                      model: str = "gpt-4", top_k: int = 10) -> Dict:
     """
     快速搜索便捷函数
     
     Args:
         query: 搜索查询
         model_path: 模型路径
-        provider_type: LLM提供商类型
-        api_key: API密钥
+        api_key: OpenAI兼容API密钥
+        base_url: API基础URL
+        model: 模型名称
         top_k: 返回结果数量
         
     Returns:
         搜索结果
     """
-    rag_system = create_intelligent_rag(model_path, provider_type, api_key)
+    rag_system = create_intelligent_rag(
+        model_path=model_path, 
+        api_key=api_key, 
+        base_url=base_url,
+        model=model
+    )
     return await rag_system.intelligent_search(query, top_k)
 
 if __name__ == "__main__":
@@ -1224,10 +1115,17 @@ if __name__ == "__main__":
     
     async def demo():
         """演示智能RAG系统"""
+        # 从环境变量获取API密钥
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            print("请设置OPENAI_API_KEY环境变量")
+            return
+        
         # 创建系统
         rag = create_intelligent_rag(
             model_path="./model/scene.ply",
-            provider_type="local"
+            api_key=api_key,
+            model="gpt-4"
         )
         
         # 测试查询

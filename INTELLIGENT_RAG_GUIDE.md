@@ -36,7 +36,7 @@
 ```bash
 # 安装依赖
 pip install torch torchvision numpy scipy scikit-learn faiss-cpu
-pip install openai anthropic aiohttp  # 可选：LLM API支持
+pip install openai aiohttp  # OpenAI-compatible LLM API
 ```
 
 ### 2. 基本使用
@@ -50,7 +50,7 @@ async def simple_search():
     results = await quick_search(
         query="红色的现代椅子",
         model_path="./model/scene.ply",
-        provider_type="local",
+        api_key="your-api-key",
         top_k=5
     )
     print(f"找到 {len(results['final_results'])} 个结果")
@@ -60,7 +60,7 @@ async def persistent_system():
     # 创建RAG系统
     rag = create_intelligent_rag(
         model_path="./model/scene.ply",
-        provider_type="local"
+        api_key="your-api-key"
     )
     
     # 执行多次搜索
@@ -79,23 +79,24 @@ asyncio.run(simple_search())
 # 使用OpenAI GPT
 rag = create_intelligent_rag(
     model_path="./model/scene.ply",
-    provider_type="openai",
     api_key="your-openai-api-key",
+    base_url="https://api.openai.com/v1",
     model="gpt-4"
 )
 
-# 使用Anthropic Claude
+# 使用Azure OpenAI
 rag = create_intelligent_rag(
     model_path="./model/scene.ply",
-    provider_type="claude",
-    api_key="your-claude-api-key",
-    model="claude-3-sonnet-20240229"
+    api_key="your-azure-api-key",
+    base_url="https://your-resource.openai.azure.com/openai/deployments/your-deployment/",
+    model="gpt-4"
 )
 
-# 使用本地模型（无需API密钥）
+# 使用vLLM本地部署
 rag = create_intelligent_rag(
     model_path="./model/scene.ply",
-    provider_type="local",
+    api_key="dummy",
+    base_url="http://localhost:8000/v1",
     model="mistral-7b-instruct"
 )
 ```
@@ -199,8 +200,9 @@ rag.clear_cache()  # 清空缓存
 ```python
 rag = create_intelligent_rag(
     model_path: str,
-    provider_type: str = "local",  # "local", "openai", "claude"
-    api_key: str = None,
+    api_key: str,
+    base_url: str = "https://api.openai.com/v1",
+    model: str = "gpt-4",
     **kwargs
 )
 ```
@@ -210,8 +212,9 @@ rag = create_intelligent_rag(
 results = await quick_search(
     query: str,
     model_path: str,
-    provider_type: str = "local",
-    api_key: str = None,
+    api_key: str,
+    base_url: str = "https://api.openai.com/v1",
+    model: str = "gpt-4",
     top_k: int = 10
 )
 ```
@@ -274,7 +277,6 @@ results = await quick_search(
 
 ```bash
 export OPENAI_API_KEY="your-openai-key"
-export ANTHROPIC_API_KEY="your-claude-key"
 export RAG_MODEL_PATH="./model/scene.ply"
 export RAG_CACHE_DIR="./cache"
 export RAG_LOG_LEVEL="INFO"

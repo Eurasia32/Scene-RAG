@@ -21,8 +21,7 @@ from intelligent_rag import (
     QueryType, 
     quick_search,
     IntelligentRAG,
-    LocalLLMProvider,
-    OpenAIProvider
+    OpenAICompatibleProvider
 )
 
 class DynamicDatabaseDemo:
@@ -65,15 +64,17 @@ class DynamicDatabaseDemo:
             }
         ]
     
-    async def initialize_system(self, provider_type: str = "local", api_key: str = None):
+    async def initialize_system(self, api_key: str, base_url: str = "https://api.openai.com/v1", 
+                               model: str = "gpt-4"):
         """初始化RAG系统"""
         print("🚀 初始化智能RAG系统...")
         start_time = time.time()
         
         self.rag_system = create_intelligent_rag(
             model_path=self.model_path,
-            provider_type=provider_type,
-            api_key=api_key
+            api_key=api_key,
+            base_url=base_url,
+            model=model
         )
         
         init_time = time.time() - start_time
@@ -363,7 +364,8 @@ class DynamicDatabaseDemo:
         
         print("\n" + "=" * 60)
     
-    async def run_full_demo(self, provider_type: str = "local", api_key: str = None):
+    async def run_full_demo(self, api_key: str, base_url: str = "https://api.openai.com/v1", 
+                           model: str = "gpt-4"):
         """运行完整演示"""
         print("🌟 智能RAG动态数据库完整演示")
         print("=" * 80)
@@ -371,7 +373,7 @@ class DynamicDatabaseDemo:
         
         try:
             # 初始化系统
-            await self.initialize_system(provider_type, api_key)
+            await self.initialize_system(api_key, base_url, model)
             
             # 逐个演示各个功能
             await self.demonstrate_intent_analysis()
@@ -408,32 +410,36 @@ async def main():
     print("=" * 50)
     
     # 检查命令行参数
-    provider_type = "local"  # 默认使用本地提供商
     api_key = None
+    base_url = "https://api.openai.com/v1"
+    model = "gpt-4"
     
     if len(sys.argv) > 1:
-        provider_type = sys.argv[1].lower()
+        api_key = sys.argv[1]
     
     if len(sys.argv) > 2:
-        api_key = sys.argv[2]
+        base_url = sys.argv[2]
+        
+    if len(sys.argv) > 3:
+        model = sys.argv[3]
     
-    # 验证提供商类型
-    if provider_type not in ["local", "openai", "claude"]:
-        print("❌ 不支持的提供商类型，使用 'local', 'openai', 或 'claude'")
-        return
+    # 尝试从环境变量获取API密钥
+    if not api_key:
+        api_key = os.getenv("OPENAI_API_KEY")
     
-    if provider_type in ["openai", "claude"] and not api_key:
-        print("⚠️  远程提供商需要API密钥")
+    if not api_key:
+        print("⚠️  需要提供API密钥")
         print("使用方法:")
-        print(f"  python {sys.argv[0]} openai YOUR_API_KEY")
-        print(f"  python {sys.argv[0]} claude YOUR_API_KEY")
-        print("或者使用本地提供商:")
-        print(f"  python {sys.argv[0]} local")
+        print(f"  python {sys.argv[0]} YOUR_API_KEY")
+        print(f"  python {sys.argv[0]} YOUR_API_KEY https://api.openai.com/v1 gpt-4")
+        print("或者设置环境变量:")
+        print("  export OPENAI_API_KEY=your_api_key")
+        print(f"  python {sys.argv[0]}")
         return
     
     # 创建并运行演示
     demo = DynamicDatabaseDemo()
-    await demo.run_full_demo(provider_type, api_key)
+    await demo.run_full_demo(api_key, base_url, model)
 
 if __name__ == "__main__":
     asyncio.run(main())

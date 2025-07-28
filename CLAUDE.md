@@ -42,8 +42,7 @@ pip install -r python/requirements_rag.txt
 python setup.py build_ext --inplace
 
 # Run intelligent RAG demos
-python examples/dynamic_database_demo.py local           # Use local LLM
-python examples/dynamic_database_demo.py openai API_KEY # Use OpenAI GPT
+python examples/dynamic_database_demo.py API_KEY        # OpenAI-compatible API
 python examples/production_usage.py                     # Production example
 
 # Run basic C++ integration tests
@@ -105,14 +104,14 @@ python -c "import asyncio; from python.intelligent_rag import quick_search; prin
 - **Python Bindings** (`src/python_bindings.cpp`, `src/gsrender_interface.cpp`): pybind11 interface exposing C++ functionality to Python
 
 **Python RAG Components**:
-- **IntelligentRAG** (`python/intelligent_rag.py`): Complete RAG pipeline with LLM providers (OpenAI, Claude, Local), gaussian pruning, multi-factor reranking
+- **IntelligentRAG** (`python/intelligent_rag.py`): Complete RAG pipeline with OpenAI-compatible API providers, gaussian pruning, multi-factor reranking
 - **GSRenderRAGBackend** (`python/gsrender_rag.py`): High-level interface connecting C++ renderer to CLIP/SAM models, clustering and vector database management
 - **Production Examples** (`examples/`): Dynamic database demo, production usage patterns, CLIP/SAM integration examples
 
 **Critical Architectural Decisions**:
 - **Simplified from Training**: All backward propagation and training code removed, focus on rendering performance
 - **Hybrid C++/Python**: Core rendering in C++ for speed, RAG intelligence in Python for flexibility  
-- **Modular LLM Support**: Pluggable LLM providers (OpenAI, Claude, local models) via common interface
+- **OpenAI-Compatible API**: Unified interface supporting OpenAI, Azure OpenAI, vLLM, Ollama and other compatible providers
 - **Intent-Based Pruning**: Dynamic gaussian filtering based on query understanding (2-3x speedup)
 - **Multi-Factor Ranking**: Combines vector similarity, text matching, visual attributes, spatial relevance, multi-view consistency
 
@@ -165,7 +164,7 @@ pip install torch torchvision numpy scipy scikit-learn faiss-cpu
 pip install opencv-python pybind11
 
 # RAG-specific (see python/requirements_rag.txt)
-pip install openai anthropic aiohttp              # LLM APIs
+pip install openai aiohttp                       # LLM APIs
 pip install matplotlib seaborn tqdm               # Visualization & progress
 pip install clip-by-openai segment-anything       # ML models
 
@@ -224,11 +223,11 @@ The system automatically detects CUDA availability and configures tensors accord
 **Prototype/Demo Components** ⚠️ (see TODO_PRODUCTION_READY.md):
 - **CLIP feature extraction**: Currently using mock implementation, needs real OpenAI CLIP model
 - **3DGS model loading**: Using simulated data, needs actual PLY file parsing  
-- **Local LLM integration**: Simplified rule-based fallback, needs Ollama/vLLM/Transformers
+- **API-based LLM integration**: Uses OpenAI-compatible APIs for flexible LLM provider support
 - **Semantic labeling**: Position-based inference, needs point cloud segmentation models
 - **Vector database**: Basic FAISS, needs optimization for production scale
 
-**Critical Implementation Tasks** (35 total, ~200 hours):
+**Critical Implementation Tasks** (34 total, ~192 hours):
 1. **High Priority (15 tasks)**: CLIP integration, PLY parsing, LLM APIs, semantic segmentation, spatial indexing
 2. **Medium Priority (12 tasks)**: Multi-view semantics, visual classifiers, performance monitoring, API security  
 3. **Low Priority (8 tasks)**: GPU acceleration, distributed deployment, model quantization, A/B testing
@@ -258,7 +257,7 @@ The renderer uses OpenGL-style coordinate systems with Y-up convention. View mat
 
 **Documentation and Guides**:
 - `INTELLIGENT_RAG_GUIDE.md` - Comprehensive RAG system usage guide
-- `TODO_PRODUCTION_READY.md` - 35-task production readiness checklist
+- `TODO_PRODUCTION_READY.md` - 34-task production readiness checklist
 - `PYTHON_RAG_GUIDE.md` - Python backend documentation
 - `PYTHON_INTERFACE_GUIDE.md` - C++/Python integration guide
 
