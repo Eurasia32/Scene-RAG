@@ -52,16 +52,20 @@ python examples/clip_sam_integration.py
 
 ### Development and Testing
 ```bash
-# Clean project and remove redundant files (moves files to backup)
-./cleanup_project.sh      # Remove training-related files
-./cleanup_rasterizer.sh    # Remove backward propagation code
+# Build Python extensions (required before importing gsrender)
+python setup.py build_ext --inplace
 
-# Check which files can be safely removed
-cat CLEANUP_FILES.md
-cat RASTERIZER_CLEANUP.md
+# Verify C++ renderer works
+./build/opensplat_render -i model.ply -o test.png -m "1 0 0 0 0 1 0 0 0 0 1 5 0 0 0 1"
 
-# Test intelligent RAG system
-python -c "import asyncio; from python.intelligent_rag import quick_search; print(asyncio.run(quick_search('red chair', './model/model.ply')))"
+# Test intelligent RAG system (requires API key)
+python -c "import asyncio; from python.intelligent_rag import quick_search; print(asyncio.run(quick_search('red chair', './model/model.ply', api_key='your-key')))"
+
+# Quick RAG system verification
+python examples/dynamic_database_demo.py your-api-key
+
+# Clean legacy files (if needed)
+./cleanup_project.sh && ./cleanup_rasterizer.sh
 ```
 
 ## Core Architecture
@@ -228,9 +232,11 @@ The system automatically detects CUDA availability and configures tensors accord
 - **Vector database**: Basic FAISS, needs optimization for production scale
 
 **Critical Implementation Tasks** (34 total, ~192 hours):
-1. **High Priority (15 tasks)**: CLIP integration, PLY parsing, LLM APIs, semantic segmentation, spatial indexing
+1. **High Priority (14 tasks)**: CLIP integration, PLY parsing, semantic segmentation, spatial indexing - See TODO_PRODUCTION_READY.md for detailed roadmap
 2. **Medium Priority (12 tasks)**: Multi-view semantics, visual classifiers, performance monitoring, API security  
 3. **Low Priority (8 tasks)**: GPU acceleration, distributed deployment, model quantization, A/B testing
+
+**Next Development Phase**: Start with Task #1 (CLIP feature extractor) and Task #2 (3DGS model loader) from TODO_PRODUCTION_READY.md as they unlock the core functionality.
 
 ## Coordinate System Conventions
 
@@ -238,36 +244,17 @@ The renderer uses OpenGL-style coordinate systems with Y-up convention. View mat
 
 ## Project File Organization
 
-**C++ Core (Active Files)**:
-- `src/opensplat_render.cpp` - Main application with enhanced CLI
-- `src/model_render.cpp` - Simplified model loading
-- `src/cv_utils_render.cpp` - Image utilities
-- `src/gsrender_interface.cpp` - Python binding interface
-- `src/python_bindings.cpp` - pybind11 bindings
-- `include/*_render.hpp` - Corresponding headers
-- `src/rasterizer/gsplat_render.cpp` - Core rendering (forward-only)
-- `src/rasterizer/bindings_render.h` - Clean API declarations
+**Core Implementation Files**:
+- `python/intelligent_rag.py` - Complete RAG pipeline (~1300 lines) - **Main system entry point**
+- `src/opensplat_render.cpp` + `include/model_render.hpp` - C++ rendering core
+- `src/python_bindings.cpp` + `src/gsrender_interface.cpp` - Python-C++ bridge
+- `examples/dynamic_database_demo.py` - Production-ready demonstration
 
-**Python RAG System**:
-- `python/intelligent_rag.py` - Complete RAG pipeline with LLM integration (~1300 lines)
-- `python/gsrender_rag.py` - High-level CLIP/SAM integration interface
-- `examples/dynamic_database_demo.py` - Full system demonstration
-- `examples/production_usage.py` - Production deployment patterns
-- `examples/clip_sam_integration.py` - ML model integration examples
+**Critical Documentation**:
+- `TODO_PRODUCTION_READY.md` - **Essential**: 34-task roadmap for production deployment
+- `INTELLIGENT_RAG_GUIDE.md` - Comprehensive API and usage documentation
 
-**Documentation and Guides**:
-- `INTELLIGENT_RAG_GUIDE.md` - Comprehensive RAG system usage guide
-- `TODO_PRODUCTION_READY.md` - 34-task production readiness checklist
-- `PYTHON_RAG_GUIDE.md` - Python backend documentation
-- `PYTHON_INTERFACE_GUIDE.md` - C++/Python integration guide
-
-**Legacy Files (in backup directories)**:
-- Original training+rendering implementation
-- Backward propagation and gradient computation code
-- Point cloud I/O utilities  
-- Complex model management for optimization
-
-The project has evolved from a pure rendering system to a comprehensive 3D scene understanding platform with intelligent RAG capabilities, while maintaining the clean, optimized C++ core.
+The project evolved from pure 3DGS rendering to an intelligent scene understanding platform. Legacy training/optimization code has been moved to backup directories.
 
 ## Common Issues and Solutions
 

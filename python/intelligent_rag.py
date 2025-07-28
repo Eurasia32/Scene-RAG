@@ -19,6 +19,8 @@ import openai
 from sklearn.preprocessing import MinMaxScaler
 from scipy.spatial.distance import cdist
 import faiss
+import clip
+from PIL import Image
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
@@ -837,21 +839,45 @@ class IntelligentRAG:
         
         return index
     
-    def _initialize_clip_extractor(self):
+    def _initialize_clip_extractor(self, model_name: str = "ViT-B/32", device: str = None):
         """初始化CLIP特征提取器"""
-        # 简化实现：创建模拟的CLIP提取器
-        class MockCLIPExtractor:
-            def extract_from_text(self, text: str) -> np.ndarray:
-                # 模拟CLIP文本编码
-                hash_val = hash(text) % 1000000
-                np.random.seed(hash_val)
-                return np.random.normal(0, 1, 512)
+        class CLIPExtractor:
+            def __init__(self, model_name: str = "ViT-B/32", device: str = None):
+                self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+                self.model, self.proprocess = clip.load(model_name, device = self.device)
+                self.model.eval()
             
+            def extract_from_text(self, text: str) -> np.ndarray:
+                with torch.no_grad():
+                    text_tokens = clip.tokenize([text]).to(self.device)
+                    text_features = self.model.encode_text(text_tokens)
+                    text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+                    return text_features.cpu().numpy().flatten()
+
             def extract_from_image(self, image: np.ndarray) -> np.ndarray:
-                # 模拟CLIP图像编码
-                return np.random.normal(0, 1, 512)
+                if image.dtype != np.uint8:
+                    image = (image * 255).astype(np.uint8)
+                pil_image = Image.fromarray(image)
+                with torch.no_grad():
+                    image_input = self.preprocess(pil_image).unsqueeze(0).to(self.device)
+                    image_features = self.model.encode_image(image_input)
+                    image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+                    return image_features.cpu().numpy().flatten()
+
+        # # 简化实现：创建模拟的CLIP提取器
+        # class MockCLIPExtractor:
+        #     def extract_from_text(self, text: str) -> np.ndarray:
+        #         # 模拟CLIP文本编码
+        #         hash_val = hash(text) % 1000000
+        #         np.random.seed(hash_val)
+        #         return np.random.normal(0, 1, 512)
+            
+        #     def extract_from_image(self, image: np.ndarray) -> np.ndarray:
+        #         # 模拟CLIP图像编码
+        #         return np.random.normal(0, 1, 512)
         
-        return MockCLIPExtractor()
+        # return MockCLIPExtractor()
+        return CLIPExtractor(model_name=model_name, device=device)
     
     async def intelligent_search(self, query: str, top_k: int = 10, 
                                 downsample_factor: float = 0.3) -> Dict:
