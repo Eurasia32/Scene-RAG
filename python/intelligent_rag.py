@@ -19,8 +19,6 @@ import openai
 from sklearn.preprocessing import MinMaxScaler
 from scipy.spatial.distance import cdist
 import faiss
-import clip
-from PIL import Image
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
@@ -841,42 +839,102 @@ class IntelligentRAG:
     
     def _initialize_clip_extractor(self, model_name: str = "ViT-B/32", device: str = None):
         """初始化CLIP特征提取器"""
+        try:
+            import clip
+            from PIL import Image
+        except ImportError as e:
+            logger.error(f"CLIP依赖未安装: {e}")
+            logger.info("请运行: pip install clip-by-openai pillow")
+            raise ImportError("CLIP特征提取器需要额外依赖，请安装 clip-by-openai 和 pillow")
+        
         class CLIPExtractor:
             def __init__(self, model_name: str = "ViT-B/32", device: str = None):
                 self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-                self.model, self.proprocess = clip.load(model_name, device = self.device)
-                self.model.eval()
+                self.model_name = model_name
+                
+                try:
+                    self.model, self.preprocess = clip.load(model_name, device=self.device)
+                    self.model.eval()
+                    
+                    # 获取特征维度
+                    with torch.no_grad():
+                        dummy_text = clip.tokenize(["test"]).to(self.device)
+                        dummy_features = self.model.encode_text(dummy_text)
+                        self.feature_dim = dummy_features.shape[-1]
+                    
+                    logger.info(f"CLIP模型已加载: {model_name} on {self.device}, 特征维度: {self.feature_dim}")
+                except Exception as e:
+                    logger.error(f"CLIP模型加载失败: {e}")
+                    raise RuntimeError(f"无法加载CLIP模型 {model_name}: {e}")
+                    
+                # 简单的LRU缓存
+                self.text_cache = {}
+                self.cache_size = 1000
             
             def extract_from_text(self, text: str) -> np.ndarray:
-                with torch.no_grad():
-                    text_tokens = clip.tokenize([text]).to(self.device)
-                    text_features = self.model.encode_text(text_tokens)
-                    text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-                    return text_features.cpu().numpy().flatten()
+                """从文本提取CLIP特征"""
+                # 检查缓存
+                if text in self.text_cache:
+                    return self.text_cache[text]
+                    
+                try:
+                    with torch.no_grad():
+                        text_tokens = clip.tokenize([text]).to(self.device)
+                        text_features = self.model.encode_text(text_tokens)
+                        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+                        result = text_features.cpu().numpy().flatten()
+                        
+                        # 缓存结果
+                        if len(self.text_cache) >= self.cache_size:
+                            # 简单的缓存清理：删除最旧的一半
+                            keys = list(self.text_cache.keys())
+                            for key in keys[:len(keys)//2]:
+                                del self.text_cache[key]
+                        self.text_cache[text] = result
+                        
+                        return result
+                except Exception as e:
+                    logger.error(f"文本特征提取失败: {e}")
+                    # 返回零向量作为后备
+                    return np.zeros(self.feature_dim, dtype=np.float32)
 
             def extract_from_image(self, image: np.ndarray) -> np.ndarray:
-                if image.dtype != np.uint8:
-                    image = (image * 255).astype(np.uint8)
-                pil_image = Image.fromarray(image)
-                with torch.no_grad():
-                    image_input = self.preprocess(pil_image).unsqueeze(0).to(self.device)
-                    image_features = self.model.encode_image(image_input)
-                    image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-                    return image_features.cpu().numpy().flatten()
+                """从图像提取CLIP特征"""
+                try:
+                    # 数据类型转换
+                    if image.dtype != np.uint8:
+                        image = np.clip(image * 255, 0, 255).astype(np.uint8)
+                    
+                    # 确保图像是RGB格式
+                    if len(image.shape) == 3 and image.shape[2] == 3:
+                        pil_image = Image.fromarray(image, mode='RGB')
+                    elif len(image.shape) == 2:
+                        pil_image = Image.fromarray(image, mode='L').convert('RGB')
+                    else:
+                        raise ValueError(f"不支持的图像格式: shape={image.shape}")
+                        
+                    with torch.no_grad():
+                        image_input = self.preprocess(pil_image).unsqueeze(0).to(self.device)
+                        image_features = self.model.encode_image(image_input)
+                        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+                        return image_features.cpu().numpy().flatten()
+                except Exception as e:
+                    logger.error(f"图像特征提取失败: {e}")
+                    # 返回零向量作为后备
+                    return np.zeros(self.feature_dim, dtype=np.float32)
+                    
+            def extract_batch_text(self, texts: List[str]) -> np.ndarray:
+                """批量提取文本特征"""
+                try:
+                    with torch.no_grad():
+                        text_tokens = clip.tokenize(texts).to(self.device)
+                        text_features = self.model.encode_text(text_tokens)
+                        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+                        return text_features.cpu().numpy()
+                except Exception as e:
+                    logger.error(f"批量文本特征提取失败: {e}")
+                    return np.zeros((len(texts), self.feature_dim), dtype=np.float32)
 
-        # # 简化实现：创建模拟的CLIP提取器
-        # class MockCLIPExtractor:
-        #     def extract_from_text(self, text: str) -> np.ndarray:
-        #         # 模拟CLIP文本编码
-        #         hash_val = hash(text) % 1000000
-        #         np.random.seed(hash_val)
-        #         return np.random.normal(0, 1, 512)
-            
-        #     def extract_from_image(self, image: np.ndarray) -> np.ndarray:
-        #         # 模拟CLIP图像编码
-        #         return np.random.normal(0, 1, 512)
-        
-        # return MockCLIPExtractor()
         return CLIPExtractor(model_name=model_name, device=device)
     
     async def intelligent_search(self, query: str, top_k: int = 10, 
