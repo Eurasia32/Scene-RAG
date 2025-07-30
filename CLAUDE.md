@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Overview
+
+OpenSplat Render is a lightweight Python interface for 3D Gaussian Splatting rendering, focused on inference only. **Training functionality has been completely removed** to create a lean rendering-only library.
+
 ## Python Module Installation
 
 OpenSplat now includes a Python rendering interface that can be installed as a pip package:
@@ -72,9 +76,58 @@ The Python module requires additional dependencies:
 
 Build system automatically detects PyTorch CUDA installation and configures accordingly.
 
-OpenSplat uses CMake for building. The build process varies based on GPU runtime:
+## Removed Components (No Longer Present)
 
-### CPU-only Build
+The following components have been **completely removed** from this rendering-focused version:
+
+**Training Infrastructure**:
+- `opensplat.cpp` - Main training executable
+- `simple_trainer.cpp` - Simple training application  
+- `model.hpp/cpp` - Training model with optimizers
+- `optim_scheduler.hpp/cpp` - Learning rate scheduling
+
+**Data Loading**:
+- `input_data.hpp/cpp` - Multi-format data loading
+- `colmap.hpp/cpp` - COLMAP project loader
+- `nerfstudio.hpp/cpp` - Nerfstudio format loader
+- `opensfm.hpp/cpp` - OpenSfM format loader
+- `openmvg.hpp/cpp` - OpenMVG format loader
+
+**Training Utilities**:
+- `kdtree_tensor.hpp/cpp` - KD-tree for gaussian refinement
+- `visualizer.hpp/cpp` - Training visualization
+- All optimizer and training loop code
+
+## Current Architecture (Rendering Only)
+
+## Current Architecture (Rendering Only)
+
+**Core Rendering Components**:
+- `model_render.hpp/cpp` - Simplified rendering-only model without training
+- `project_gaussians.hpp/cpp` - 3D to 2D gaussian projection
+- `rasterize_gaussians.hpp/cpp` - GPU/CPU rasterization
+- `rasterize_gaussians_enhanced.hpp/cpp` - Enhanced rasterizer with depth & px2gid
+- `spherical_harmonics.hpp/cpp` - View-dependent color computation
+- `point_io.hpp/cpp` - PLY file loading for trained models
+
+**Python Interface**:
+- `python_bindings.hpp/cpp` - C++ rendering interface
+- `pybind_module.cpp` - Python module definition
+- `setup.py` - pip installation configuration
+
+**GPU Backends**:
+- `rasterizer/gsplat/` - CUDA implementation
+- `rasterizer/gsplat-cpu/` - CPU fallback
+
+**Utility Modules**:
+- `utils.hpp/cpp` - General utilities
+- `cv_utils.hpp/cpp` - Computer vision utilities  
+- `tensor_math.hpp/cpp` - Tensor operations
+- `ssim.hpp/cpp` - SSIM loss (kept for compatibility)
+
+## Build System
+
+Python module build via pip (recommended):
 ```bash
 mkdir build && cd build
 cmake -DCMAKE_PREFIX_PATH=/path/to/libtorch/ .. && make -j$(nproc)
@@ -94,14 +147,16 @@ cmake -DCMAKE_PREFIX_PATH=/path/to/libtorch/ -DGPU_RUNTIME="HIP" -DHIP_ROOT_DIR=
 make
 ```
 
-### macOS with Metal
+### ROCm/HIP Build
 ```bash
 mkdir build && cd build
-cmake -DCMAKE_PREFIX_PATH=/path/to/libtorch/ -DGPU_RUNTIME=MPS .. && make -j$(sysctl -n hw.logicalcpu)
+export PYTORCH_ROCM_ARCH=gfx906
+cmake -DCMAKE_PREFIX_PATH=/path/to/libtorch/ -DGPU_RUNTIME="HIP" -DHIP_ROOT_DIR=/opt/rocm -DOPENSPLAT_BUILD_SIMPLE_TRAINER=ON ..
+make
 ```
 
 ### Key CMake Options
-- `GPU_RUNTIME`: "CUDA", "HIP", "MPS", or "CPU" (default: "CUDA")
+- `GPU_RUNTIME`: "CUDA", "HIP", or "CPU" (default: "CUDA")
 - `OPENSPLAT_BUILD_SIMPLE_TRAINER`: Build simple trainer application
 - `OPENSPLAT_BUILD_VISUALIZER`: Build visualizer (requires Pangolin)
 - `OPENSPLAT_MAX_CUDA_COMPATIBILITY`: Build for maximum CUDA compatibility
@@ -142,8 +197,7 @@ OpenSplat is a 3D Gaussian Splatting implementation that converts camera poses a
 
 **Rasterization Engine**: GPU-accelerated rendering in `rasterizer/` directory:
 - `gsplat/`: CUDA implementation with forward/backward passes
-- `gsplat-cpu/`: CPU fallback implementation  
-- `gsplat-metal/`: Apple Metal implementation for macOS
+- `gsplat-cpu/`: CPU fallback implementation
 
 **Key Processing Modules**:
 - `project_gaussians.cpp`: Projects 3D Gaussians to 2D screen space
@@ -169,7 +223,6 @@ OpenSplat is a 3D Gaussian Splatting implementation that converts camera poses a
 The build system automatically detects and configures for different GPU runtimes:
 - **CUDA**: Primary GPU backend for NVIDIA cards
 - **HIP**: AMD GPU support via ROCm
-- **MPS**: Apple Metal Performance Shaders for macOS
 - **CPU**: Fallback CPU implementation
 
 ### Dependencies

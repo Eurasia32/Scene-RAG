@@ -7,10 +7,6 @@
 #include <gsplat/bindings.h>
 #endif
 
-#if defined(USE_MPS)
-#include <gsplat-metal/bindings.h>
-#endif
-
 #include <gsplat-cpu/bindings.h>
 
 #endif

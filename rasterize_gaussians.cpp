@@ -1,7 +1,7 @@
 #include "rasterize_gaussians.hpp"
 #include "gsplat.hpp"
 
-#if defined(USE_HIP) || defined(USE_CUDA) || defined(USE_MPS)
+#if defined(USE_HIP) || defined(USE_CUDA)
 
 std::tuple<torch::Tensor,
         torch::Tensor,

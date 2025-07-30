@@ -1,6 +1,6 @@
 #include "project_gaussians.hpp"
 
-#if defined(USE_HIP) || defined(USE_CUDA) || defined(USE_MPS)
+#if defined(USE_HIP) || defined(USE_CUDA)
 
 variable_list ProjectGaussians::forward(AutogradContext *ctx, 
                 torch::Tensor means,

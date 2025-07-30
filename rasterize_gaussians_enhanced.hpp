@@ -17,7 +17,7 @@ struct EnhancedRenderOutput {
     std::vector<int32_t>* px2gid; // [H*W] pixel to gaussian IDs mapping
 };
 
-#if defined(USE_HIP) || defined(USE_CUDA) || defined(USE_MPS)
+#if defined(USE_HIP) || defined(USE_CUDA)
 
 class RasterizeGaussiansEnhanced : public Function<RasterizeGaussiansEnhanced>{
 public:

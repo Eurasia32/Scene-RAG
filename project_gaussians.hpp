@@ -7,7 +7,7 @@
 
 using namespace torch::autograd;
 
-#if defined(USE_HIP) || defined(USE_CUDA) || defined(USE_MPS)
+#if defined(USE_HIP) || defined(USE_CUDA)
 
 class ProjectGaussians : public Function<ProjectGaussians>{
 public:

@@ -196,7 +196,7 @@ tensor_list RasterizeGaussiansCPUEnhanced::backward(AutogradContext *ctx, tensor
     return result;
 }
 
-#if defined(USE_HIP) || defined(USE_CUDA) || defined(USE_MPS)
+#if defined(USE_HIP) || defined(USE_CUDA)
 
 EnhancedRenderOutput RasterizeGaussiansEnhanced::forward(AutogradContext *ctx, 
         torch::Tensor xys,
@@ -305,7 +305,7 @@ EnhancedRenderOutput render_gaussians_enhanced(
         cov2d = p[3];
         camDepths = p[4];
     } else {
-#if defined(USE_HIP) || defined(USE_CUDA) || defined(USE_MPS)
+#if defined(USE_HIP) || defined(USE_CUDA)
         TileBounds tileBounds = std::make_tuple((width + BLOCK_X - 1) / BLOCK_X,
                                               (height + BLOCK_Y - 1) / BLOCK_Y,
                                               1);
@@ -343,7 +343,7 @@ EnhancedRenderOutput render_gaussians_enhanced(
     if (device.is_cpu()) {
         rgbs = SphericalHarmonicsCPU::apply(sh_degree, viewDirs, colors);
     } else {
-#if defined(USE_HIP) || defined(USE_CUDA) || defined(USE_MPS)
+#if defined(USE_HIP) || defined(USE_CUDA)
         rgbs = SphericalHarmonics::apply(sh_degree, viewDirs, colors);
 #endif
     }
@@ -357,7 +357,7 @@ EnhancedRenderOutput render_gaussians_enhanced(
                                                    cov2d, camDepths,
                                                    height, width, background);
     } else {
-#if defined(USE_HIP) || defined(USE_CUDA) || defined(USE_MPS)
+#if defined(USE_HIP) || defined(USE_CUDA)
         return RasterizeGaussiansEnhanced::apply(xys, depths, radii, conics, numTilesHit,
                                                rgbs, torch::sigmoid(opacities),
                                                height, width, background);

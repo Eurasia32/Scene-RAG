@@ -6,6 +6,7 @@
 #include "constants.hpp"
 #include "utils.hpp"
 #include "point_io.hpp"
+#include "model_render.hpp"
 #include <filesystem>
 
 GaussianRenderer::GaussianRenderer(const std::string& device, int sh_degree)

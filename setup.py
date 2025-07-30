@@ -13,18 +13,20 @@ def get_extension():
     if isinstance(torch_root, list):
         torch_root = torch_root[0]
     
-    # Basic source files for the Python module
+    # Basic source files for the Python module (removed training-specific files)
     sources = [
         "pybind_module.cpp",
         "python_bindings.cpp", 
         "project_gaussians.cpp",
         "rasterize_gaussians.cpp",
+        "rasterize_gaussians_enhanced.cpp",
         "spherical_harmonics.cpp",
         "cv_utils.cpp",
         "utils.cpp",
         "tensor_math.cpp",
         "point_io.cpp",
-        "ssim.cpp"
+        "ssim.cpp",
+        "model_render.cpp"
     ]
     
     # GPU source files

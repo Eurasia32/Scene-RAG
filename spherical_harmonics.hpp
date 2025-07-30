@@ -10,7 +10,7 @@ int degFromSh(int numBases);
 torch::Tensor rgb2sh(const torch::Tensor &rgb);
 torch::Tensor sh2rgb(const torch::Tensor &sh);
 
-#if defined(USE_HIP) || defined(USE_CUDA) || defined(USE_MPS)
+#if defined(USE_HIP) || defined(USE_CUDA)
 
 class SphericalHarmonics : public Function<SphericalHarmonics>{
 public:
