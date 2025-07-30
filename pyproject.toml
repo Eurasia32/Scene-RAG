@@ -1,0 +1,67 @@
+[build-system]
+requires = [
+    "setuptools>=45",
+    "wheel",
+    "pybind11>=2.6.0",
+    "torch>=1.9.0"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opensplat-render"
+version = "1.0.0"
+description = "Python interface for OpenSplat 3D Gaussian Splatting rendering"
+readme = "README.md"
+license = {text = "AGPL-3.0-or-later"}
+authors = [
+    {name = "OpenSplat Contributors", email = "opensplat@example.com"}
+]
+maintainers = [
+    {name = "OpenSplat Contributors", email = "opensplat@example.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research", 
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9", 
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Computer Graphics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+requires-python = ">=3.7"
+dependencies = [
+    "torch>=1.9.0",
+    "numpy>=1.19.0",
+    "pybind11>=2.6.0"
+] 
+
+[project.optional-dependencies]
+opencv = ["opencv-python>=4.5.0"]
+dev = ["pytest", "black", "isort", "mypy"]
+docs = ["sphinx", "sphinx-rtd-theme"]
+
+[project.urls]
+Homepage = "https://github.com/pierotofy/OpenSplat"
+Documentation = "https://github.com/pierotofy/OpenSplat"
+Repository = "https://github.com/pierotofy/OpenSplat"
+"Bug Tracker" = "https://github.com/pierotofy/OpenSplat/issues"
+
+[tool.setuptools]
+packages = []  # No Python packages, just C++ extension
+
+[tool.black]
+line-length = 88
+target-version = ['py37']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.7"
+warn_return_any = true
+warn_unused_configs = true

@@ -1,0 +1,13 @@
+include README.md
+include LICENSE.txt
+include VERSION
+include *.hpp
+include *.cpp
+include *.cu
+include *.cuh
+include *.h
+include *.metal
+include *.mm
+recursive-include rasterizer *.cu *.cuh *.cpp *.hpp *.h *.metal *.mm
+global-exclude *.pyc
+global-exclude __pycache__
