@@ -1,19 +1,85 @@
 import os
 import sys
 import torch
-from pybind11.setup_helpers import Pybind11Extension, build_ext
-from setuptools import setup, Extension
+import subprocess
+import tempfile
+import shutil
+from pathlib import Path
+from torch.utils.cpp_extension import CUDAExtension, BuildExtension
+from setuptools import setup, find_packages
 import pybind11
 
+def download_and_extract_header_library(name, url, extract_path):
+    """Download and extract header-only libraries."""
+    import urllib.request
+    import zipfile
+    
+    print(f"Downloading {name} from {url}")
+    
+    with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as tmp_file:
+        urllib.request.urlretrieve(url, tmp_file.name)
+        
+        with zipfile.ZipFile(tmp_file.name, 'r') as zip_ref:
+            zip_ref.extractall(extract_path)
+        
+        os.unlink(tmp_file.name)
+
+def setup_external_dependencies():
+    """Setup external header-only dependencies."""
+    deps_dir = Path("external_deps")
+    deps_dir.mkdir(exist_ok=True)
+    
+    dependencies = {
+        "nlohmann_json": {
+            "url": "https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.zip",
+            "include_subdir": "json-3.11.3/single_include"
+        },
+        "nanoflann": {
+            "url": "https://github.com/jlblancoc/nanoflann/archive/refs/tags/v1.5.5.zip", 
+            "include_subdir": "nanoflann-1.5.5/include"
+        },
+        "glm": {
+            "url": "https://github.com/g-truc/glm/archive/refs/tags/1.0.1.zip",
+            "include_subdir": "glm-1.0.1"
+        }
+    }
+    
+    include_paths = []
+    
+    for name, info in dependencies.items():
+        dep_path = deps_dir / name
+        if not dep_path.exists():
+            print(f"Setting up {name}...")
+            download_and_extract_header_library(name, info["url"], deps_dir)
+            
+        # Find the correct include directory
+        include_dir = deps_dir / info["include_subdir"]
+        if include_dir.exists():
+            include_paths.append(str(include_dir))
+        else:
+            # Fallback: look for common patterns
+            extracted_dirs = list(deps_dir.glob(f"{name.replace('_', '-')}*"))
+            if extracted_dirs:
+                # Try common include subdirectories
+                for subdir in ["include", "single_include", ""]:
+                    candidate = extracted_dirs[0] / subdir
+                    if candidate.exists():
+                        include_paths.append(str(candidate))
+                        break
+    
+    return include_paths
+
 def get_extension():
-    """Configure the C++ extension."""
+    """Configure the C++ extension using PyTorch's CUDA extension system."""
     
-    # Get PyTorch installation info
-    torch_root = torch.utils.cmake_prefix_path
-    if isinstance(torch_root, list):
-        torch_root = torch_root[0]
+    # Check for CUDA availability
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is required but not available. Please install PyTorch with CUDA support.")
     
-    # Basic source files for the Python module (removed training-specific files)
+    # Setup external dependencies (header-only libraries)
+    external_includes = setup_external_dependencies()
+    
+    # Basic source files for the Python module
     sources = [
         "pybind_module.cpp",
         "python_bindings.cpp", 
@@ -29,7 +95,7 @@ def get_extension():
         "model_render.cpp"
     ]
     
-    # GPU source files
+    # GPU source files (always included)
     gpu_sources = [
         "rasterizer/gsplat/forward.cu",
         "rasterizer/gsplat/backward.cu", 
@@ -37,112 +103,96 @@ def get_extension():
         "rasterizer/gsplat/ext.cpp"
     ]
     
-    # CPU source files  
-    cpu_sources = [
-        "rasterizer/gsplat-cpu/gsplat_cpu.cpp"
-    ]
-    
-    # Always include CPU sources
-    sources.extend(cpu_sources)
+    # Include GPU sources
+    sources.extend(gpu_sources)
     
     # Include directories
     include_dirs = [
-        pybind11.get_cmake_dir() + "/../../../include",
+        ".",  # Current directory
         "rasterizer",
-        "rasterizer/gsplat",
-        "rasterizer/gsplat-cpu"
+        "rasterizer/gsplat"
     ]
     
-    # Add PyTorch include directories
-    include_dirs.extend(torch.utils.cpp_extension.include_paths())
+    # Add external dependencies include paths
+    include_dirs.extend(external_includes)
     
-    # Library directories and libraries
-    library_dirs = torch.utils.cpp_extension.library_paths()
-    libraries = ["torch", "torch_cpu"]
+    # Add pybind11 includes
+    include_dirs.append(pybind11.get_include())
     
-    # Compiler and linker flags
-    cxx_flags = ["-std=c++17", "-O3"]
-    nvcc_flags = []
-    
-    # Detect GPU support
-    cuda_available = torch.cuda.is_available()
-    
-    # Set up compilation flags based on available hardware
-    extra_compile_args = {"cxx": cxx_flags}
-    define_macros = []
-    
-    if cuda_available:
-        # Add CUDA sources and configuration
-        sources.extend(gpu_sources)
-        include_dirs.extend(torch.utils.cpp_extension.include_paths(cuda=True))
-        libraries.extend(["torch_cuda", "cuda", "cudart"])
-        
-        nvcc_flags = [
-            "-std=c++17",
-            "-O3",
-            "--extended-lambda",
-            "--expt-relaxed-constexpr",
-            "-use_fast_math"
+    # Compiler flags
+    extra_compile_args = {
+        'cxx': ['-std=c++17', '-O3'],
+        'nvcc': [
+            '-std=c++17',
+            '-O3',
+            '--extended-lambda',
+            '--expt-relaxed-constexpr',
+            '-use_fast_math',
+            '-diag-suppress=20012'  # Suppress glm warnings
         ]
-        
-        extra_compile_args["nvcc"] = nvcc_flags
-        define_macros.append(("USE_CUDA", None))
-        
-        # Auto-detect CUDA architectures
-        cuda_arch_list = os.environ.get("TORCH_CUDA_ARCH_LIST", None)
-        if cuda_arch_list is None:
-            # Default architectures
-            cuda_arch_list = "7.0;7.5;8.0;8.6"
-        
-        for arch in cuda_arch_list.split(";"):
-            if arch:
-                arch_flag = f"-gencode=arch=compute_{arch.replace('.', '')},code=sm_{arch.replace('.', '')}"
-                nvcc_flags.append(arch_flag)
-    else:
-        # CPU-only build
-        print("CUDA not available, building CPU-only version")
+    }
     
-    # Check for external dependencies
-    opencv_available = True
+    # Define macros for CUDA build
+    define_macros = [("USE_CUDA", None)]
+    
+    # Check for OpenCV
+    libraries = []
     try:
         import cv2
         opencv_include = cv2.includes()
         if opencv_include:
             include_dirs.extend(opencv_include)
+            libraries.extend(["opencv_core", "opencv_imgproc", "opencv_highgui", "opencv_calib3d"])
+        print("Found OpenCV")
     except ImportError:
-        opencv_available = False
         print("Warning: OpenCV not found, some features may not work")
     
-    if opencv_available:
-        libraries.extend(["opencv_core", "opencv_imgproc", "opencv_highgui", "opencv_calib3d"])
+    print("Building CUDA-only version")
     
-    # Create extension
-    ext = Pybind11Extension(
-        "opensplat_render",
+    # Auto-detect CUDA architectures
+    cuda_arch_list = os.environ.get("TORCH_CUDA_ARCH_LIST", None)
+    if cuda_arch_list is None:
+        # Default architectures for common GPUs
+        cuda_arch_list = ["7.0", "7.5", "8.0", "8.6"]
+    else:
+        cuda_arch_list = cuda_arch_list.replace(";", " ").split()
+    
+    # Create CUDA extension
+    ext = CUDAExtension(
+        name="opensplat_render",
         sources=sources,
         include_dirs=include_dirs,
-        library_dirs=library_dirs,
         libraries=libraries,
-        language="c++",
         define_macros=define_macros,
-        extra_compile_args=extra_compile_args
+        extra_compile_args=extra_compile_args,
+        # PyTorch handles CUDA architectures automatically, but we can specify them
+        # if needed via environment variable TORCH_CUDA_ARCH_LIST
     )
     
     return ext
 
-# Custom build_ext to handle CUDA compilation
-class CustomBuildExt(build_ext):
+# Custom BuildExtension to handle CUDA compilation and dependencies
+class CustomBuildExt(BuildExtension):
     def build_extensions(self):
-        # Check if we're building with CUDA
-        if torch.cuda.is_available():
-            try:
-                # Try to use torch's CUDA extension utilities
-                from torch.utils.cpp_extension import CUDAExtension
-                print("Building with CUDA support")
-            except ImportError:
-                print("Warning: torch CUDA extension utilities not available")
+        # Ensure external dependencies are downloaded before building
+        setup_external_dependencies()
         
+        # Verify CUDA is available
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA is required but not available. Please install PyTorch with CUDA support.")
+        
+        print("Building with CUDA support")
         super().build_extensions()
+
+    def run(self):
+        # Clean up external dependencies on clean build
+        if 'clean' in sys.argv:
+            external_deps_dir = Path("external_deps")
+            if external_deps_dir.exists():
+                print("Cleaning external dependencies...")
+                shutil.rmtree(external_deps_dir)
+        
+        super().run()
 
 setup(
     name="opensplat-render",

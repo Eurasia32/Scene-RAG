@@ -1,8 +1,33 @@
 # MacOS
 .DS_Store
 
-# build
+# Build directories
 build/
 my_build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+wheels/
+
+# External dependencies (downloaded automatically)
+external_deps/
+
+# IDE
 .idea/
 .vscode/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.log
+
+# CUDA compiled files
+*.fatbin
+*.ptx
+*.cubin

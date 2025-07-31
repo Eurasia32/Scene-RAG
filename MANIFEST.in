@@ -6,8 +6,7 @@ include *.cpp
 include *.cu
 include *.cuh
 include *.h
-include *.metal
-include *.mm
-recursive-include rasterizer *.cu *.cuh *.cpp *.hpp *.h *.metal *.mm
+recursive-include rasterizer *.cu *.cuh *.cpp *.hpp *.h
+recursive-exclude external_deps *
 global-exclude *.pyc
 global-exclude __pycache__
