@@ -54,17 +54,26 @@ def setup_external_dependencies():
             
         # Find the correct include directory
         include_dir = deps_dir / info["include_subdir"]
+        print(f"  Checking include directory: {include_dir}")
         if include_dir.exists():
             include_paths.append(str(include_dir))
+            print(f"  -> Added to include paths: {include_dir}")
+            # For GLM, verify the header exists
+            if name == "glm":
+                glm_header = include_dir / "glm" / "glm.hpp"
+                print(f"  -> GLM header check: {glm_header} (exists: {glm_header.exists()})")
         else:
+            print(f"  Include directory not found: {include_dir}")
             # Fallback: look for common patterns
             extracted_dirs = list(deps_dir.glob(f"{name.replace('_', '-')}*"))
+            print(f"  Fallback: found extracted dirs: {extracted_dirs}")
             if extracted_dirs:
                 # Try common include subdirectories
                 for subdir in ["include", "single_include", ""]:
                     candidate = extracted_dirs[0] / subdir
                     if candidate.exists():
                         include_paths.append(str(candidate))
+                        print(f"  -> Fallback added: {candidate}")
                         break
     
     return include_paths
@@ -115,6 +124,16 @@ def get_extension():
     
     # Add external dependencies include paths
     include_dirs.extend(external_includes)
+    
+    # Debug: Print all include directories
+    print("All include directories:")
+    for i, inc_dir in enumerate(include_dirs):
+        print(f"  [{i}] {inc_dir}")
+        # Check if GLM header exists in this path
+        import os
+        glm_header = os.path.join(inc_dir, "glm", "glm.hpp")
+        if os.path.exists(glm_header):
+            print(f"    -> GLM header found: {glm_header}")
     
     # Add pybind11 includes
     include_dirs.append(pybind11.get_include())
