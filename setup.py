@@ -40,7 +40,7 @@ def setup_external_dependencies():
         },
         "glm": {
             "url": "https://github.com/g-truc/glm/archive/refs/tags/1.0.1.zip",
-            "include_subdir": "glm-1.0.1"
+            "include_subdir": "glm-1.0.1"  # This adds glm-1.0.1/ to include path, so #include <glm/glm.hpp> finds glm-1.0.1/glm/glm.hpp
         }
     }
     
