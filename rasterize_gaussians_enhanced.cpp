@@ -4,7 +4,7 @@
 #include "gsplat.hpp"
 #include "constants.hpp"
 
-EnhancedRenderOutput RasterizeGaussiansCPUEnhanced::forward(AutogradContext *ctx, 
+tensor_list RasterizeGaussiansCPUEnhanced::forward(AutogradContext *ctx, 
         torch::Tensor xys,
         torch::Tensor radii,
         torch::Tensor conics,
@@ -21,8 +21,10 @@ EnhancedRenderOutput RasterizeGaussiansCPUEnhanced::forward(AutogradContext *ctx
     int width = imgWidth;
     int height = imgHeight;
     
+    // Define maximum gaussians per pixel for px2gid tensor
+    const int max_gaussians_per_pixel = 32;
+    
     float *pDepths = static_cast<float *>(camDepths.data_ptr());
-    std::vector<int32_t> *px2gid = new std::vector<int32_t>[width * height];
     
     // Sort gaussians by depth
     std::vector<size_t> gIndices(numPoints);
@@ -37,6 +39,7 @@ EnhancedRenderOutput RasterizeGaussiansCPUEnhanced::forward(AutogradContext *ctx
     torch::Tensor outImg = torch::zeros({height, width, channels}, torch::TensorOptions().dtype(torch::kFloat32).device(device));
     torch::Tensor depthMap = torch::zeros({height, width}, torch::TensorOptions().dtype(torch::kFloat32).device(device));
     torch::Tensor alphaMap = torch::zeros({height, width}, torch::TensorOptions().dtype(torch::kFloat32).device(device));
+    torch::Tensor px2gidTensor = torch::full({height, width, max_gaussians_per_pixel}, -1, torch::TensorOptions().dtype(torch::kInt32).device(device));
     torch::Tensor finalTs = torch::ones({height, width}, torch::TensorOptions().dtype(torch::kFloat32).device(device));   
     torch::Tensor done = torch::zeros({height, width}, torch::TensorOptions().dtype(torch::kBool).device(device));   
 
@@ -55,8 +58,12 @@ EnhancedRenderOutput RasterizeGaussiansCPUEnhanced::forward(AutogradContext *ctx
     float *pOutImg = static_cast<float *>(outImg.data_ptr());
     float *pDepthMap = static_cast<float *>(depthMap.data_ptr());
     float *pAlphaMap = static_cast<float *>(alphaMap.data_ptr());
+    int32_t *pPx2gid = static_cast<int32_t *>(px2gidTensor.data_ptr());
     float *pFinalTs = static_cast<float *>(finalTs.data_ptr());
     bool *pDone = static_cast<bool *>(done.data_ptr());
+    
+    // Track number of gaussians per pixel for px2gid
+    std::vector<int> px2gid_count(width * height, 0);
     
     // Render each gaussian (back to front)
     for (const size_t &gaussianIdx : gIndices){
@@ -104,7 +111,10 @@ EnhancedRenderOutput RasterizeGaussiansCPUEnhanced::forward(AutogradContext *ctx
                 }
                 
                 // Record gaussian ID for this pixel
-                px2gid[pixIdx].push_back(static_cast<int32_t>(gaussianIdx));
+                if (px2gid_count[pixIdx] < max_gaussians_per_pixel) {
+                    pPx2gid[pixIdx * max_gaussians_per_pixel + px2gid_count[pixIdx]] = static_cast<int32_t>(gaussianIdx);
+                    px2gid_count[pixIdx]++;
+                }
                 
                 // Accumulate color
                 for (int c = 0; c < channels; c++){
@@ -153,9 +163,8 @@ EnhancedRenderOutput RasterizeGaussiansCPUEnhanced::forward(AutogradContext *ctx
     ctx->saved_data["imgWidth"] = imgWidth;
     ctx->saved_data["background"] = background;
     ctx->saved_data["finalTs"] = finalTs;
-    ctx->saved_data["px2gid"] = reinterpret_cast<int64_t>(px2gid);
     
-    return EnhancedRenderOutput{outImg, depthMap, alphaMap, px2gid};
+    return {outImg, depthMap, alphaMap, px2gidTensor};
 }
 
 tensor_list RasterizeGaussiansCPUEnhanced::backward(AutogradContext *ctx, tensor_list grad_outputs) {
@@ -172,10 +181,6 @@ tensor_list RasterizeGaussiansCPUEnhanced::backward(AutogradContext *ctx, tensor
     torch::Tensor cov2d = ctx->saved_data["cov2d"].toTensor();
     torch::Tensor camDepths = ctx->saved_data["camDepths"].toTensor();
     torch::Tensor background = ctx->saved_data["background"].toTensor();
-    
-    // Clean up px2gid memory
-    const std::vector<int32_t> *px2gid = reinterpret_cast<const std::vector<int32_t> *>(ctx->saved_data["px2gid"].toInt());
-    delete[] px2gid;
     
     // Return zero gradients for all inputs
     return {
@@ -194,7 +199,7 @@ tensor_list RasterizeGaussiansCPUEnhanced::backward(AutogradContext *ctx, tensor
 
 #if defined(USE_HIP) || defined(USE_CUDA)
 
-EnhancedRenderOutput RasterizeGaussiansEnhanced::forward(AutogradContext *ctx, 
+tensor_list RasterizeGaussiansEnhanced::forward(AutogradContext *ctx, 
         torch::Tensor xys,
         torch::Tensor depths,
         torch::Tensor radii,
@@ -217,7 +222,10 @@ EnhancedRenderOutput RasterizeGaussiansEnhanced::forward(AutogradContext *ctx,
     torch::Tensor alphaMap = torch::zeros({imgHeight, imgWidth}, torch::TensorOptions().dtype(torch::kFloat32).device(device));
     
     // Create empty px2gid mapping
-    std::vector<int32_t> *px2gid = new std::vector<int32_t>[imgHeight * imgWidth];
+    // Create placeholder px2gid tensor (GPU version doesn't implement full px2gid yet)
+    const int max_gaussians_per_pixel = 32;
+    torch::Tensor px2gidTensor = torch::full({imgHeight, imgWidth, max_gaussians_per_pixel}, -1, 
+                                           torch::TensorOptions().dtype(torch::kInt32).device(rgb.device()));
     
     // Save context for backward pass
     ctx->saved_data["xys"] = xys;
@@ -230,9 +238,8 @@ EnhancedRenderOutput RasterizeGaussiansEnhanced::forward(AutogradContext *ctx,
     ctx->saved_data["imgHeight"] = imgHeight;
     ctx->saved_data["imgWidth"] = imgWidth;
     ctx->saved_data["background"] = background;
-    ctx->saved_data["px2gid"] = reinterpret_cast<int64_t>(px2gid);
     
-    return EnhancedRenderOutput{rgb, depthMap, alphaMap, px2gid};
+    return {rgb, depthMap, alphaMap, px2gidTensor};
 }
 
 tensor_list RasterizeGaussiansEnhanced::backward(AutogradContext *ctx, tensor_list grad_outputs) {
@@ -247,14 +254,10 @@ tensor_list RasterizeGaussiansEnhanced::backward(AutogradContext *ctx, tensor_li
     int imgHeight = ctx->saved_data["imgHeight"].toInt();
     int imgWidth = ctx->saved_data["imgWidth"].toInt();
     torch::Tensor background = ctx->saved_data["background"].toTensor();
-    const std::vector<int32_t> *px2gid = reinterpret_cast<const std::vector<int32_t> *>(ctx->saved_data["px2gid"].toInt());
     
     // Use original GPU backward pass for RGB gradient
     torch::Tensor grad_out_img = grad_outputs[0];
     auto result = RasterizeGaussians::backward(ctx, {grad_out_img});
-    
-    // Clean up
-    delete[] px2gid;
     
     return result;
 }
@@ -326,8 +329,10 @@ EnhancedRenderOutput render_gaussians_enhanced(
         torch::Tensor rgb = background.repeat({height, width, 1});
         torch::Tensor depth = torch::zeros({height, width}, device);
         torch::Tensor alpha = torch::zeros({height, width}, device);
-        std::vector<int32_t>* px2gid = new std::vector<int32_t>[height * width];
-        return EnhancedRenderOutput{rgb, depth, alpha, px2gid};
+        const int max_gaussians_per_pixel = 32;
+        torch::Tensor px2gid = torch::full({height, width, max_gaussians_per_pixel}, -1, 
+                                         torch::TensorOptions().dtype(torch::kInt32).device(device));
+        return {rgb, depth, alpha, px2gid};
     }
     
     // Compute spherical harmonics colors
@@ -347,18 +352,23 @@ EnhancedRenderOutput render_gaussians_enhanced(
     rgbs = torch::clamp_min(rgbs + 0.5f, 0.0f);
     
     // Rasterize with enhanced output
+    tensor_list result;
     if (device.is_cpu()) {
-        return RasterizeGaussiansCPUEnhanced::apply(xys, radii, conics, rgbs,
-                                                   torch::sigmoid(opacities),
-                                                   cov2d, camDepths,
-                                                   height, width, background);
+        result = RasterizeGaussiansCPUEnhanced::apply(xys, radii, conics, rgbs,
+                                                     torch::sigmoid(opacities),
+                                                     cov2d, camDepths,
+                                                     height, width, background);
     } else {
 #if defined(USE_HIP) || defined(USE_CUDA)
-        return RasterizeGaussiansEnhanced::apply(xys, depths, radii, conics, numTilesHit,
-                                               rgbs, torch::sigmoid(opacities),
-                                               height, width, background);
+        result = RasterizeGaussiansEnhanced::apply(xys, depths, radii, conics, numTilesHit,
+                                                 rgbs, torch::sigmoid(opacities),
+                                                 height, width, background);
 #endif
     }
     
-    throw std::runtime_error("Device not supported");
+    if (result.size() != 4) {
+        throw std::runtime_error("Enhanced rasterizer should return 4 tensors (RGB, depth, alpha, px2gid)");
+    }
+    
+    return EnhancedRenderOutput{result[0], result[1], result[2], result[3]};
 }

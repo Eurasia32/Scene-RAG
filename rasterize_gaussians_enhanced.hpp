@@ -14,14 +14,14 @@ struct EnhancedRenderOutput {
     torch::Tensor rgb;           // [H, W, 3] RGB image
     torch::Tensor depth;         // [H, W] depth map  
     torch::Tensor alpha;         // [H, W] accumulated alpha
-    std::vector<int32_t>* px2gid; // [H*W] pixel to gaussian IDs mapping
+    torch::Tensor px2gid;        // [H, W, max_gaussians_per_pixel] pixel to gaussian IDs mapping
 };
 
 #if defined(USE_HIP) || defined(USE_CUDA)
 
 class RasterizeGaussiansEnhanced : public Function<RasterizeGaussiansEnhanced>{
 public:
-    static EnhancedRenderOutput forward(AutogradContext *ctx, 
+    static tensor_list forward(AutogradContext *ctx, 
             torch::Tensor xys,
             torch::Tensor depths,
             torch::Tensor radii,
@@ -40,7 +40,7 @@ public:
 
 class RasterizeGaussiansCPUEnhanced : public Function<RasterizeGaussiansCPUEnhanced>{
 public:
-    static EnhancedRenderOutput forward(AutogradContext *ctx, 
+    static tensor_list forward(AutogradContext *ctx, 
             torch::Tensor xys,
             torch::Tensor radii,
             torch::Tensor conics,
