@@ -87,7 +87,7 @@ private:
                                 torch::Tensor background);
     
     // Convert px2gid vector to numpy array
-    py::array_t<int32_t> convert_px2gid(const std::vector<int32_t>* px2gid, int height, int width);
+    py::array_t<int32_t> convert_px2gid(const torch::Tensor& px2gid_tensor, int height, int width);
 };
 
 #endif // PYTHON_BINDINGS_HPP

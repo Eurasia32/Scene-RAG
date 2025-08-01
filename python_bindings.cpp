@@ -94,9 +94,6 @@ RenderOutput GaussianRenderer::render_internal(const GaussianParams& gaussians,
     // Convert px2gid to numpy array
     py::array_t<int32_t> px2gid = convert_px2gid(enhanced_result.px2gid, height, width);
     
-    // Clean up px2gid memory
-    delete[] enhanced_result.px2gid;
-    
     return RenderOutput(torch::clamp_max(enhanced_result.rgb, 1.0f), 
                        enhanced_result.depth, px2gid);
 }
@@ -141,32 +138,24 @@ std::string GaussianRenderer::get_device() const {
     return device_.str();
 }
 
-py::array_t<int32_t> GaussianRenderer::convert_px2gid(const std::vector<int32_t>* px2gid, 
+py::array_t<int32_t> GaussianRenderer::convert_px2gid(const torch::Tensor& px2gid_tensor, 
                                                      int height, int width) {
-    // Find maximum number of gaussians per pixel
-    int max_gaussians = 0;
-    for (int i = 0; i < height * width; i++) {
-        max_gaussians = std::max(max_gaussians, static_cast<int>(px2gid[i].size()));
-    }
+    // px2gid_tensor shape: [height, width, max_gaussians_per_pixel]
+    TORCH_CHECK(px2gid_tensor.dim() == 3, "px2gid tensor must be 3-dimensional");
+    TORCH_CHECK(px2gid_tensor.size(0) == height && px2gid_tensor.size(1) == width, 
+                "px2gid tensor dimensions must match height and width");
     
-    // Create numpy array with shape [height, width, max_gaussians]
+    int max_gaussians = px2gid_tensor.size(2);
+    
+    // Create numpy array with same shape
     py::array_t<int32_t> result = py::array_t<int32_t>({height, width, max_gaussians});
-    auto ptr = static_cast<int32_t*>(result.mutable_unchecked<3>().mutable_data(0, 0, 0));
+    auto result_ptr = static_cast<int32_t*>(result.mutable_unchecked<3>().mutable_data(0, 0, 0));
     
-    // Fill with -1 (invalid ID) initially
-    std::fill(ptr, ptr + height * width * max_gaussians, -1);
+    // Copy data from tensor to numpy array
+    torch::Tensor px2gid_cpu = px2gid_tensor.to(torch::kCPU).contiguous();
+    const int32_t* tensor_ptr = px2gid_cpu.data_ptr<int32_t>();
     
-    // Copy gaussian IDs
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            int pixel_idx = y * width + x;
-            const auto& gaussian_ids = px2gid[pixel_idx];
-            
-            for (size_t g = 0; g < gaussian_ids.size() && g < max_gaussians; g++) {
-                ptr[y * width * max_gaussians + x * max_gaussians + g] = gaussian_ids[g];
-            }
-        }
-    }
+    std::memcpy(result_ptr, tensor_ptr, height * width * max_gaussians * sizeof(int32_t));
     
     return result;
 }
