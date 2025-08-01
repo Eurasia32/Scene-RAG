@@ -103,8 +103,7 @@ def get_extension():
     gpu_sources = [
         "rasterizer/gsplat/forward.cu",
         "rasterizer/gsplat/backward.cu", 
-        "rasterizer/gsplat/bindings.cu",
-        "rasterizer/gsplat/ext.cpp"
+        "rasterizer/gsplat/bindings.cu"
     ]
     
     # Include GPU sources

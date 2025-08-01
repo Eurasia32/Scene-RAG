@@ -9,6 +9,9 @@
 #include "model_render.hpp"
 #include <filesystem>
 
+// Forward declaration from model_render.cpp
+torch::Tensor projectionMatrix(float zNear, float zFar, float fovX, float fovY, const torch::Device &device);
+
 GaussianRenderer::GaussianRenderer(const std::string& device, int sh_degree)
     : device_(torch::Device(device)), sh_degree_(sh_degree) {
     if (!torch::cuda::is_available() && device == "cuda") {
@@ -158,18 +161,4 @@ py::array_t<int32_t> GaussianRenderer::convert_px2gid(const torch::Tensor& px2gi
     std::memcpy(result_ptr, tensor_ptr, height * width * max_gaussians * sizeof(int32_t));
     
     return result;
-}
-
-// Helper function to create projection matrix (moved from model.cpp)
-torch::Tensor projectionMatrix(float zNear, float zFar, float fovX, float fovY, const torch::Device &device){
-    float t = zNear * std::tan(0.5f * fovY);
-    float b = -t;
-    float r = zNear * std::tan(0.5f * fovX);
-    float l = -r;
-    return torch::tensor({
-        {2.0f * zNear / (r - l), 0.0f, (r + l) / (r - l), 0.0f},
-        {0.0f, 2 * zNear / (t - b), (t + b) / (t - b), 0.0f},
-        {0.0f, 0.0f, (zFar + zNear) / (zFar - zNear), -1.0f * zFar * zNear / (zFar - zNear)},
-        {0.0f, 0.0f, 1.0f, 0.0f}
-    }, device);
 }
