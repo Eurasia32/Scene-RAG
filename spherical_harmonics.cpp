@@ -66,8 +66,5 @@ tensor_list SphericalHarmonics::backward(AutogradContext *ctx, tensor_list grad_
 torch::Tensor SphericalHarmonicsCPU::apply(int degreesToUse, 
             torch::Tensor viewDirs, 
             torch::Tensor coeffs){
-    long long numPoints = coeffs.size(0);
-    int degree = degFromSh(coeffs.size(-2)); 
-
-    return compute_sh_forward_tensor_cpu(numPoints, degree, degreesToUse, viewDirs, coeffs);
+    throw std::runtime_error("CPU spherical harmonics computation is not supported. Please use CUDA device.");
 }
