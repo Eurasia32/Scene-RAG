@@ -218,7 +218,7 @@ tensor_list RasterizeGaussiansEnhanced::forward(
     torch::Tensor background) {
 
   // Direct GPU rasterization call (simplified for inference)
-  int numIntersects = numTilesHit.sum().item<int>();
+  int numIntersects = static_cast<int>(numTilesHit.sum().item<int64_t>());
 
   // Bin and sort gaussians
   TileBounds tileBounds =
@@ -226,7 +226,7 @@ tensor_list RasterizeGaussiansEnhanced::forward(
                       (imgHeight + BLOCK_Y - 1) / BLOCK_Y, 1);
 
   auto binResults = map_gaussian_to_intersects_tensor(
-      colors.size(0), numIntersects, xys, depths, radii, numTilesHit.cumsum(0),
+      static_cast<int>(colors.size(0)), numIntersects, xys, depths, radii, numTilesHit.cumsum(0),
       tileBounds);
   torch::Tensor gaussianIdsSorted = std::get<0>(binResults);
   torch::Tensor tileBins =

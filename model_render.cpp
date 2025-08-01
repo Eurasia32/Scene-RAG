@@ -93,14 +93,14 @@ torch::Tensor RenderModel::render(const torch::Tensor &viewMat,
 
 #if defined(USE_HIP) || defined(USE_CUDA)
   // Direct GPU rasterization call (simplified for inference)
-  int numIntersects = numTilesHit.sum().item<int>();
+  int numIntersects = static_cast<int>(numTilesHit.sum().item<int64_t>());
   
   // Bin and sort gaussians
   TileBounds tileBounds = std::make_tuple(
       (width + BLOCK_X - 1) / BLOCK_X, (height + BLOCK_Y - 1) / BLOCK_Y, 1);
       
   auto binResults = map_gaussian_to_intersects_tensor(
-      means.size(0), numIntersects, xys, depths, radii, 
+      static_cast<int>(means.size(0)), numIntersects, xys, depths, radii, 
       numTilesHit.cumsum(0), tileBounds);
   torch::Tensor gaussianIdsSorted = std::get<0>(binResults);
   torch::Tensor tileBins = get_tile_bin_edges_tensor(numIntersects, gaussianIdsSorted);
