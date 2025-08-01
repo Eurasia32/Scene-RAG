@@ -146,9 +146,6 @@ tensor_list RasterizeGaussiansCPUEnhanced::forward(AutogradContext *ctx,
         if (totalAlpha > 1e-6f) {
             pDepthMap[pixIdx] /= totalAlpha;
         }
-        
-        // Reverse the px2gid order (front to back for rendering)
-        std::reverse(px2gid[pixIdx].begin(), px2gid[pixIdx].end());
     }
     
     // Save data for backward pass
