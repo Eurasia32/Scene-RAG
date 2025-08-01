@@ -52,12 +52,12 @@ PYBIND11_MODULE(opensplat_render, m) {
              "Render single view",
              py::arg("gaussians"), py::arg("camera"), 
              py::arg("downsample_factor") = 1.0f,
-             py::arg("background") = torch::tensor({0.0f, 0.0f, 0.0f}))
+             py::arg("background") = py::none())
         .def("render_batch", &GaussianRenderer::render_batch,
              "Render multiple views",
              py::arg("gaussians"), py::arg("cameras"),
              py::arg("downsample_factor") = 1.0f,
-             py::arg("background") = torch::tensor({0.0f, 0.0f, 0.0f}))
+             py::arg("background") = py::none())
         .def("set_device", &GaussianRenderer::set_device,
              "Set computing device", py::arg("device"))
         .def("get_device", &GaussianRenderer::get_device,

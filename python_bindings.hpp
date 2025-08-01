@@ -57,13 +57,13 @@ public:
     RenderOutput render(const GaussianParams& gaussians, 
                        const CameraParams& camera,
                        float downsample_factor = 1.0f,
-                       torch::Tensor background = torch::tensor({0.0f, 0.0f, 0.0f}));
+                       py::object background = py::none());
     
     // Batch rendering for multiple views
     std::vector<RenderOutput> render_batch(const GaussianParams& gaussians,
                                           const std::vector<CameraParams>& cameras,
                                           float downsample_factor = 1.0f,
-                                          torch::Tensor background = torch::tensor({0.0f, 0.0f, 0.0f}));
+                                          py::object background = py::none());
     
     // Load gaussians from PLY file
     static GaussianParams load_gaussians(const std::string& ply_path);

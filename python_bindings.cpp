@@ -1,6 +1,5 @@
 #include "python_bindings.hpp"
 #include "project_gaussians.hpp"
-#include "rasterize_gaussians.hpp"
 #include "rasterize_gaussians_enhanced.hpp"
 #include "spherical_harmonics.hpp"
 #include "constants.hpp"
@@ -24,19 +23,32 @@ GaussianRenderer::~GaussianRenderer() {}
 RenderOutput GaussianRenderer::render(const GaussianParams& gaussians,
                                      const CameraParams& camera,
                                      float downsample_factor,
-                                     torch::Tensor background) {
-    return render_internal(gaussians, camera, downsample_factor, background);
+                                     py::object background) {
+    torch::Tensor bg;
+    if (background.is_none()) {
+        bg = torch::zeros({3}, torch::TensorOptions().device(device_));
+    } else {
+        bg = background.cast<torch::Tensor>().to(device_);
+    }
+    return render_internal(gaussians, camera, downsample_factor, bg);
 }
 
 std::vector<RenderOutput> GaussianRenderer::render_batch(const GaussianParams& gaussians,
                                                         const std::vector<CameraParams>& cameras,
                                                         float downsample_factor,
-                                                        torch::Tensor background) {
+                                                        py::object background) {
+    torch::Tensor bg;
+    if (background.is_none()) {
+        bg = torch::zeros({3}, torch::TensorOptions().device(device_));
+    } else {
+        bg = background.cast<torch::Tensor>().to(device_);
+    }
+    
     std::vector<RenderOutput> outputs;
     outputs.reserve(cameras.size());
     
     for (const auto& camera : cameras) {
-        outputs.emplace_back(render_internal(gaussians, camera, downsample_factor, background));
+        outputs.emplace_back(render_internal(gaussians, camera, downsample_factor, bg));
     }
     
     return outputs;
