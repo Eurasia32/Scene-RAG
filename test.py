@@ -5,7 +5,7 @@ import torch
 renderer = osr.GaussianRenderer(device="cuda", sh_degree=3)
 
 # Load trained gaussians
-gaussians = osr.GaussianRenderer.load_gaussians("scene.ply")
+gaussians = osr.GaussianRenderer.load_gaussians("model.ply")
 
 # Create camera
 camera = osr.GaussianRenderer.create_camera(

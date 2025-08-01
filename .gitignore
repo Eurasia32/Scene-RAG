@@ -31,3 +31,5 @@ external_deps/
 *.fatbin
 *.ptx
 *.cubin
+
+*.ply

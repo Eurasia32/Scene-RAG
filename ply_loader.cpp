@@ -36,7 +36,7 @@ PointsTensor loadPly(const std::string& ply_path) {
     // Allocate tensors
     auto xyz = torch::zeros({vertex_count, 3}, torch::kFloat32);
     auto features_dc = torch::zeros({vertex_count, 3}, torch::kFloat32);
-    auto features_rest = torch::zeros({vertex_count, 45, 3}, torch::kFloat32); // Up to degree 3 SH
+    auto features_rest = torch::zeros({vertex_count, 15, 3}, torch::kFloat32); // 15 coefficients for higher order (degree 1-3)
     auto opacities = torch::zeros({vertex_count, 1}, torch::kFloat32);
     auto scales = torch::zeros({vertex_count, 3}, torch::kFloat32);
     auto quats = torch::zeros({vertex_count, 4}, torch::kFloat32);
@@ -67,10 +67,17 @@ PointsTensor loadPly(const std::string& ply_path) {
             file.read(reinterpret_cast<char*>(&features_dc_ptr[i][1]), sizeof(float));
             file.read(reinterpret_cast<char*>(&features_dc_ptr[i][2]), sizeof(float));
             
-            // Read remaining SH features (45 coefficients for degree 3)
-            for (int j = 0; j < 45; j++) {
+            // Read remaining SH features (15 coefficients for degree 1-3)
+            for (int j = 0; j < 15; j++) {
                 for (int k = 0; k < 3; k++) {
                     file.read(reinterpret_cast<char*>(&features_rest_ptr[i][j][k]), sizeof(float));
+                }
+            }
+            
+            // Skip remaining SH coefficients if present (45-15=30 coefficients)
+            for (int j = 0; j < 30; j++) {
+                for (int k = 0; k < 3; k++) {
+                    file.read(reinterpret_cast<char*>(&temp), sizeof(float));
                 }
             }
             
@@ -106,10 +113,18 @@ PointsTensor loadPly(const std::string& ply_path) {
             // Read SH DC coefficients
             iss >> features_dc_ptr[i][0] >> features_dc_ptr[i][1] >> features_dc_ptr[i][2];
             
-            // Read remaining SH coefficients
-            for (int j = 0; j < 45; j++) {
+            // Read remaining SH coefficients (only first 15 for degree 1-3)
+            for (int j = 0; j < 15; j++) {
                 for (int k = 0; k < 3; k++) {
                     iss >> features_rest_ptr[i][j][k];
+                }
+            }
+            
+            // Skip remaining SH coefficients if present (30 more)
+            float temp;
+            for (int j = 0; j < 30; j++) {
+                for (int k = 0; k < 3; k++) {
+                    iss >> temp; // Just read and discard
                 }
             }
             
