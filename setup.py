@@ -88,6 +88,8 @@ def get_extension():
     sources = [
         "pybind_module.cpp",
         "python_bindings.cpp", 
+        "project_gaussians.cpp",
+        "spherical_harmonics.cpp",
         "rasterize_gaussians_enhanced.cpp",
         "utils.cpp",
         "tensor_math.cpp",

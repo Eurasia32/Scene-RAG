@@ -294,7 +294,7 @@ tensor_list RasterizeGaussiansEnhanced::backward(AutogradContext *ctx,
       torch::zeros_like(conics),      // grad_conics
       torch::zeros_like(numTilesHit), // grad_numTilesHit
       torch::zeros_like(colors),      // grad_colors
-      torch::zeros_like(opacity),    // grad_opacity
+      torch::zeros_like(opacity),     // grad_opacity
       torch::Tensor(),                // grad_imgHeight (no gradient needed)
       torch::Tensor(),                // grad_imgWidth (no gradient needed)
       torch::zeros_like(background)   // grad_background
