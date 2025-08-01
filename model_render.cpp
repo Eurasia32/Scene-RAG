@@ -39,19 +39,8 @@ torch::Tensor RenderModel::render(const torch::Tensor& viewMat, const torch::Ten
     torch::Tensor cov2d, camDepths; // CPU only
     
     if (device.is_cpu()) {
-        auto p = ProjectGaussiansCPU::apply(means,
-                                          torch::exp(scales),
-                                          1.0f,
-                                          quats / quats.norm(2, {-1}, true),
-                                          viewMat,
-                                          torch::matmul(projMat, viewMat),
-                                          fx, fy, cx, cy, height, width);
-        xys = p[0];
-        radii = p[1];
-        conics = p[2];
-        cov2d = p[3];
-        camDepths = p[4];
-    } else {
+        throw std::runtime_error("CPU rendering is not supported. Please use CUDA device.");
+    }
 #if defined(USE_HIP) || defined(USE_CUDA)
         TileBounds tileBounds = std::make_tuple((width + BLOCK_X - 1) / BLOCK_X,
                                               (height + BLOCK_Y - 1) / BLOCK_Y,

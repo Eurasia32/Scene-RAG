@@ -84,13 +84,11 @@ def get_extension():
     # Setup external dependencies (header-only libraries)
     external_includes = setup_external_dependencies()
     
-    # Basic source files for the Python module
+    # Basic source files for the Python module (GPU only)
     sources = [
         "pybind_module.cpp",
         "python_bindings.cpp", 
-        "project_gaussians.cpp",
         "rasterize_gaussians_enhanced.cpp",
-        "spherical_harmonics.cpp",
         "utils.cpp",
         "tensor_math.cpp",
         "ssim.cpp",
