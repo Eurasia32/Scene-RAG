@@ -199,7 +199,7 @@ class CustomBuildExt(BuildExtension):
         super().run()
 
 setup(
-    name="opensplat-render",
+    name="opensplat_render",
     version="1.0.0",
     author="OpenSplat Contributors", 
     author_email="opensplat@example.com",
