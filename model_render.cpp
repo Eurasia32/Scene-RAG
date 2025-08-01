@@ -102,7 +102,7 @@ torch::Tensor RenderModel::render(const torch::Tensor &viewMat,
   auto binResults = map_gaussian_to_intersects_tensor(
       means.size(0), numIntersects, xys, depths, radii, 
       numTilesHit.cumsum(0), tileBounds);
-  torch::Tensor gaussianIdsSorted = binResults.first;
+  torch::Tensor gaussianIdsSorted = std::get<0>(binResults);
   torch::Tensor tileBins = get_tile_bin_edges_tensor(numIntersects, gaussianIdsSorted);
   
   // Rasterize

@@ -219,24 +219,25 @@ tensor_list RasterizeGaussiansEnhanced::forward(
 
   // Direct GPU rasterization call (simplified for inference)
   int numIntersects = numTilesHit.sum().item<int>();
-  
+
   // Bin and sort gaussians
-  TileBounds tileBounds = std::make_tuple(
-      (imgWidth + BLOCK_X - 1) / BLOCK_X, (imgHeight + BLOCK_Y - 1) / BLOCK_Y, 1);
-      
+  TileBounds tileBounds =
+      std::make_tuple((imgWidth + BLOCK_X - 1) / BLOCK_X,
+                      (imgHeight + BLOCK_Y - 1) / BLOCK_Y, 1);
+
   auto binResults = map_gaussian_to_intersects_tensor(
-      colors.size(0), numIntersects, xys, depths, radii, 
-      numTilesHit.cumsum(0), tileBounds);
-  torch::Tensor gaussianIdsSorted = binResults.first;
-  torch::Tensor tileBins = get_tile_bin_edges_tensor(numIntersects, gaussianIdsSorted);
-  
+      colors.size(0), numIntersects, xys, depths, radii, numTilesHit.cumsum(0),
+      tileBounds);
+  torch::Tensor gaussianIdsSorted = std::get<0>(binResults);
+  torch::Tensor tileBins =
+      get_tile_bin_edges_tensor(numIntersects, gaussianIdsSorted);
+
   // Rasterize
   auto rasterResults = rasterize_forward_tensor(
       tileBounds, std::make_tuple(BLOCK_X, BLOCK_Y, 1),
-      std::make_tuple(imgWidth, imgHeight, 1),
-      gaussianIdsSorted, tileBins, xys, conics, colors,
-      opacity, background);
-  
+      std::make_tuple(imgWidth, imgHeight, 1), gaussianIdsSorted, tileBins, xys,
+      conics, colors, opacity, background);
+
   torch::Tensor rgb = std::get<0>(rasterResults);
 
   // For now, create placeholder depth and alpha maps
@@ -286,27 +287,17 @@ tensor_list RasterizeGaussiansEnhanced::backward(AutogradContext *ctx,
   int imgWidth = ctx->saved_data["imgWidth"].toInt();
   torch::Tensor background = ctx->saved_data["background"].toTensor();
 
-  // For inference-only rendering, return zero gradients
-  torch::Tensor xys = ctx->saved_data["xys"].toTensor();
-  torch::Tensor depths = ctx->saved_data["depths"].toTensor();
-  torch::Tensor radii = ctx->saved_data["radii"].toTensor();
-  torch::Tensor conics = ctx->saved_data["conics"].toTensor();
-  torch::Tensor numTilesHit = ctx->saved_data["numTilesHit"].toTensor();
-  torch::Tensor colors = ctx->saved_data["colors"].toTensor();
-  torch::Tensor opacity = ctx->saved_data["opacity"].toTensor();
-  torch::Tensor background = ctx->saved_data["background"].toTensor();
-
   return {
-      torch::zeros_like(xys),        // grad_xys
-      torch::zeros_like(depths),     // grad_depths
-      torch::zeros_like(radii),      // grad_radii
-      torch::zeros_like(conics),     // grad_conics
+      torch::zeros_like(xys),         // grad_xys
+      torch::zeros_like(depths),      // grad_depths
+      torch::zeros_like(radii),       // grad_radii
+      torch::zeros_like(conics),      // grad_conics
       torch::zeros_like(numTilesHit), // grad_numTilesHit
-      torch::zeros_like(colors),     // grad_colors
+      torch::zeros_like(colors),      // grad_colors
       torch::zeros_like(opacity),    // grad_opacity
-      torch::Tensor(),               // grad_imgHeight (no gradient needed)
-      torch::Tensor(),               // grad_imgWidth (no gradient needed)
-      torch::zeros_like(background)  // grad_background
+      torch::Tensor(),                // grad_imgHeight (no gradient needed)
+      torch::Tensor(),                // grad_imgWidth (no gradient needed)
+      torch::zeros_like(background)   // grad_background
   };
 }
 
