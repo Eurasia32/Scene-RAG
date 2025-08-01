@@ -34,10 +34,6 @@ def setup_external_dependencies():
             "url": "https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.zip",
             "include_subdir": "json-3.11.3/single_include"
         },
-        "nanoflann": {
-            "url": "https://github.com/jlblancoc/nanoflann/archive/refs/tags/v1.5.5.zip", 
-            "include_subdir": "nanoflann-1.5.5/include"
-        },
         "glm": {
             "url": "https://github.com/g-truc/glm/archive/refs/tags/1.0.1.zip",
             "include_subdir": "glm-1.0.1"  # This adds glm-1.0.1/ to include path, so #include <glm/glm.hpp> finds glm-1.0.1/glm/glm.hpp
@@ -98,9 +94,9 @@ def get_extension():
         "spherical_harmonics.cpp",
         "utils.cpp",
         "tensor_math.cpp",
-        "point_io.cpp",
         "ssim.cpp",
-        "model_render.cpp"
+        "model_render.cpp",
+        "ply_loader.cpp"
     ]
     
     # GPU source files (always included)

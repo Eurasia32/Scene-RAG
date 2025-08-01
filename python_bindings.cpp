@@ -5,7 +5,7 @@
 #include "spherical_harmonics.hpp"
 #include "constants.hpp"
 #include "utils.hpp"
-#include "point_io.hpp"
+#include "ply_loader.hpp"
 #include "model_render.hpp"
 #include <filesystem>
 
