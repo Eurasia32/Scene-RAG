@@ -51,7 +51,7 @@ torch::Tensor RenderModel::render(const torch::Tensor &viewMat,
     auto p = ProjectGaussians::apply(means, torch::exp(scales), 1.0f,
                                      quats / quats.norm(2, {-1}, true), viewMat,
                                      torch::matmul(projMat, viewMat), fx, fy,
-                                     cx, cy, height, width, tileBounds);
+                                     cx, cy, static_cast<int>(height), static_cast<int>(width), tileBounds);
     xys = p[0];
     depths = p[1];
     radii = p[2];
