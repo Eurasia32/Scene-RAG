@@ -96,7 +96,6 @@ def get_extension():
         "rasterize_gaussians.cpp",
         "rasterize_gaussians_enhanced.cpp",
         "spherical_harmonics.cpp",
-        "cv_utils.cpp",
         "utils.cpp",
         "tensor_math.cpp",
         "point_io.cpp",
@@ -154,17 +153,8 @@ def get_extension():
     # Define macros for CUDA build
     define_macros = [("USE_CUDA", None)]
     
-    # Check for OpenCV
+    # Libraries (no OpenCV needed)
     libraries = []
-    try:
-        import cv2
-        opencv_include = cv2.includes()
-        if opencv_include:
-            include_dirs.extend(opencv_include)
-            libraries.extend(["opencv_core", "opencv_imgproc", "opencv_highgui", "opencv_calib3d"])
-        print("Found OpenCV")
-    except ImportError:
-        print("Warning: OpenCV not found, some features may not work")
     
     print("Building CUDA-only version")
     
@@ -231,7 +221,6 @@ setup(
         "pybind11>=2.6.0"
     ],
     extras_require={
-        "opencv": ["opencv-python>=4.5.0"],
         "dev": ["pytest", "black", "isort"]
     },
     classifiers=[
