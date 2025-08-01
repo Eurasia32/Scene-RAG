@@ -95,21 +95,20 @@ torch::Tensor RenderModel::render(const torch::Tensor& viewMat, const torch::Ten
     
     rgbs = torch::clamp_min(rgbs + 0.5f, 0.0f);
     
-    // Rasterize gaussians
+    // Rasterize gaussians (GPU only)
     torch::Tensor rgb;
     
     if (device.is_cpu()) {
-        rgb = RasterizeGaussiansCPU::apply(xys, radii, conics, rgbs,
-                                          torch::sigmoid(opacities),
-                                          cov2d, camDepths,
-                                          height, width, background);
-    } else {
-#if defined(USE_HIP) || defined(USE_CUDA)
-        rgb = RasterizeGaussians::apply(xys, depths, radii, conics, numTilesHit,
-                                       rgbs, torch::sigmoid(opacities),
-                                       height, width, background);
-#endif
+        throw std::runtime_error("CPU rendering is not supported. Please use CUDA device.");
     }
+    
+#if defined(USE_HIP) || defined(USE_CUDA)
+    rgb = RasterizeGaussians::apply(xys, depths, radii, conics, numTilesHit,
+                                   rgbs, torch::sigmoid(opacities),
+                                   height, width, background);
+#else
+    throw std::runtime_error("CUDA/HIP support not compiled. Please rebuild with GPU support.");
+#endif
     
     return torch::clamp_max(rgb, 1.0f);
 }

@@ -89,7 +89,6 @@ def get_extension():
         "pybind_module.cpp",
         "python_bindings.cpp", 
         "project_gaussians.cpp",
-        "rasterize_gaussians.cpp",
         "rasterize_gaussians_enhanced.cpp",
         "spherical_harmonics.cpp",
         "utils.cpp",

@@ -348,20 +348,19 @@ EnhancedRenderOutput render_gaussians_enhanced(
     
     rgbs = torch::clamp_min(rgbs + 0.5f, 0.0f);
     
-    // Rasterize with enhanced output
+    // Rasterize with enhanced output (GPU only)
     tensor_list result;
     if (device.is_cpu()) {
-        result = RasterizeGaussiansCPUEnhanced::apply(xys, radii, conics, rgbs,
-                                                     torch::sigmoid(opacities),
-                                                     cov2d, camDepths,
-                                                     height, width, background);
-    } else {
-#if defined(USE_HIP) || defined(USE_CUDA)
-        result = RasterizeGaussiansEnhanced::apply(xys, depths, radii, conics, numTilesHit,
-                                                 rgbs, torch::sigmoid(opacities),
-                                                 height, width, background);
-#endif
+        throw std::runtime_error("CPU rendering is not supported. Please use CUDA device.");
     }
+    
+#if defined(USE_HIP) || defined(USE_CUDA)
+    result = RasterizeGaussiansEnhanced::apply(xys, depths, radii, conics, numTilesHit,
+                                             rgbs, torch::sigmoid(opacities),
+                                             height, width, background);
+#else
+    throw std::runtime_error("CUDA/HIP support not compiled. Please rebuild with GPU support.");
+#endif
     
     if (result.size() != 4) {
         throw std::runtime_error("Enhanced rasterizer should return 4 tensors (RGB, depth, alpha, px2gid)");
